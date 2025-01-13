@@ -15,9 +15,9 @@ This library is designed to process tomographic images for medical research, ena
 - Python 3.8+  
 - Required libraries are listed in `requirements.txt`.
 
-## Now library is in early stages of development
+# Now library is in early stages of development
 
 
-Contribution
+## Contribution
 
 Contributions are welcome! Please create a pull request or submit an issue if you encounter problems or have ideas for improvement.
