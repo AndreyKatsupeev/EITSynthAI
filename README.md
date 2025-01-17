@@ -1,4 +1,4 @@
-# Image Recognition and Synthetic Dataset Generation Library  
+# Image Segmentation and Synthetic Dataset Generation Library  
 
 This library is designed to process tomographic images for medical research, enabling segmentation of anatomical structures, finite element mesh generation, and synthetic dataset creation for Electrical Impedance Tomography (EIT).  
 
