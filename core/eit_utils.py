@@ -1,1 +1,0 @@
-# EIT-specific utilities
