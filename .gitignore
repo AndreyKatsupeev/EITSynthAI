@@ -76,6 +76,7 @@ wandb
 *images_obj
 *other
 *ai_logs
+*save_test_masks
 *floor_predict
 
 # dependencies
