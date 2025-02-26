@@ -1,11 +1,10 @@
+import abc
 import cv2
 import numpy
 
 from fsi_logger import write_log
 
 
-class SearchSlice():
-    pass
 
 class DICOMSeriesToMask():
     pass
@@ -19,6 +18,23 @@ class ImageToMask():
 
 class NIIToMask():
     pass
+
+class SearchSlice(abc.ABC):
+    def __init__(self, model_path=None):
+        if model_path:
+            self.model_path = model_path
+        else:
+            self.model_path = config.model_path
+        self.model = self.__load_model(self.model_path)
+
+    def __load_model(self, model_path):
+        return model.load(model_path)
+
+    def __get_slice(self, images):
+        return slise
+
+    def __ribs_predict(self, front_slice):
+        pass
 
 
 def image_decoder(list_images_binary):
