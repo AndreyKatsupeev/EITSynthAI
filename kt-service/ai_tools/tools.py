@@ -3,6 +3,24 @@ import numpy
 
 from fsi_logger import write_log
 
+
+class SearchSlice():
+    pass
+
+class DICOMSeriesToMask():
+    pass
+
+class DICOMToMask():
+
+
+class ImageToMask():
+    pass
+
+
+class NIIToMask():
+    pass
+
+
 def image_decoder(list_images_binary):
     """
     Function for converting binary images to opencv format
