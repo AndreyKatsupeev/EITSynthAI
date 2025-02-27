@@ -1,14 +1,13 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-import zipfile
-from io import BytesIO
-from typing import Dict
+import cv2
 import logging
-import base64
-import pydicom
-from pydicom.filebase import DicomBytesIO
+import zipfile
 
 from collections import defaultdict
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from io import BytesIO
+from typing import Dict
 
+from utils.utils import axial_to_sagittal, convert_to_3d, create_dicom_list
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -29,20 +28,20 @@ async def upload_file(file: UploadFile = File(...)):
 
         # Разархивирование в память
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-            for file_name in zip_file.namelist():
-                logger.info(f"Обработка файла: {file_name}")
+            dicom_list = create_dicom_list(zip_file)
+            for i_slices in dicom_list.values():
                 try:
-                    # Чтение файла в бинарном режиме и кодирование в base64
-                    file_data = zip_file.read(file_name)
-                    extracted_files[file_name] = base64.b64encode(file_data).decode('utf-8')
-
-                    # Чтение DICOM-файла
-                    dicom_data = DicomBytesIO(file_data)
-                    dicom_data_slice = pydicom.dcmread(dicom_data)
-                    series_uid = dicom_data_slice.SeriesInstanceUID
-                    series_dict[series_uid].append(dicom_data_slice)
-
-                    logger.info(f"Метаданные DICOM: PatientName={patient_name}, StudyDate={study_date}")
+                    img_3d, patient_position, image_orientation, patient_orientation = convert_to_3d(i_slices)
+                    sagittal_view = axial_to_sagittal(img_3d, patient_position, image_orientation,
+                                                      patient_orientation)  # нарезка вертикальных срезов
+                    slice_mean = sagittal_view.shape[-1] // 2  # Вычисляем средний срез
+                    # Нормализуем пиксели в диапазоне 0....255
+                    slise_save = cv2.normalize(slice_mean, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+                    # ribs = predict(slise_save)
+                    # slice_eit = search_slice(ribs)
+                    #
+                    # masks_list = predict_maks(slice_eit)
+                    # save_coord(masks_list)
 
                 except Exception as e:
                     logger.error(f"Ошибка при чтении файла {file_name}: {e}")
