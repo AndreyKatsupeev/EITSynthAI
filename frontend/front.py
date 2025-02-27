@@ -7,6 +7,7 @@ from frontend_utils import dicom_sequence_to_zip
 st.set_page_config(page_title="", layout="wide")
 st.markdown("<h2 style='text-align: center; color: white;'>Сервис формирования датасета для ЭИТ</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns(2)
+tab1, tab2 = st.tabs(["Обработчик файлов", "Запуск тестов"])
 
 with col1:
     with st.expander("Описание решения"):
@@ -40,28 +41,32 @@ if generation_mode == "dicom_sequences_custom":
     custom_input = st.sidebar.text_input("Введите номер среза относительно центрального (+1,+2,-1,-2):")
 
 if __name__ == "__main__":
-    # Загрузка файла
-    uploaded_file = st.file_uploader("Загрузите файл", accept_multiple_files=True)
-    button_flag = st.button('Запустить генерацию датасета для ЭИТ')
+    with tab1:
+        # Загрузка файла
+        uploaded_file = st.file_uploader("Загрузите файл", accept_multiple_files=True)
+        button_flag = st.button('Запустить генерацию датасета для ЭИТ')
 
-    # Обработка загруженного файла
-    if button_flag and uploaded_file is not None:
-        st.write("Файл успешно загружен!")
-        if generation_mode == "dicom_sequences_auto":
-            dicom_zip = dicom_sequence_to_zip(uploaded_file)
-            files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
-            response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
-            if response.status_code == 200:
-                st.success("Файлы успешно отправлены на обработку!")
+        # Обработка загруженного файла
+        if button_flag and uploaded_file is not None:
+            st.write("Файл успешно загружен!")
+            if generation_mode == "dicom_sequences_auto":
+                dicom_zip = dicom_sequence_to_zip(uploaded_file)
+                files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
+                response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
+                if response.status_code == 200:
+                    st.success("Файлы успешно отправлены на обработку!")
+                else:
+                    st.error(f"Ошибка: {response.status_code}")
+            elif generation_mode == "dicom_sequences_custom":
+                st.write('run dicom_sequences_custom')
+            elif generation_mode == "dicom_frame":
+                st.write('run dicom_frame')
+            elif generation_mode == "jpg_png":
+                st.write('run jpg_png')
+            elif generation_mode == "nii":
+                st.write('run nii')
             else:
-                st.error(f"Ошибка: {response.status_code}")
-        elif generation_mode == "dicom_sequences_custom":
-            st.write('run dicom_sequences_custom')
-        elif generation_mode == "dicom_frame":
-            st.write('run dicom_frame')
-        elif generation_mode == "jpg_png":
-            st.write('run jpg_png')
-        elif generation_mode == "nii":
-            st.write('run nii')
-        else:
-            print('error')
+                print('error')
+
+    with tab2:
+        st.write('run tests')
