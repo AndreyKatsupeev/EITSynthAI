@@ -5,11 +5,13 @@ import numpy
 from fsi_logger import write_log
 
 
-
 class DICOMSeriesToMask():
-    pass
+    def  __init__(self, model_path=None):
+
+
 
 class DICOMToMask():
+    pass
 
 
 class ImageToMask():
@@ -18,6 +20,7 @@ class ImageToMask():
 
 class NIIToMask():
     pass
+
 
 class SearchSlice(abc.ABC):
     def __init__(self, model_path=None):
