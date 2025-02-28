@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+
 @app.post("/uploadDicomSequence")
 async def upload_file(file: UploadFile = File(...)):
     try:
@@ -28,15 +29,21 @@ async def upload_file(file: UploadFile = File(...)):
 
         # Разархивирование в память
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-            dicom_list = create_dicom_list(zip_file)
-            for i_slices in dicom_list.values():
+            dicom_dict = create_dicom_list(zip_file)
+            for i_slices in dicom_dict[0].values():
                 try:
                     img_3d, patient_position, image_orientation, patient_orientation = convert_to_3d(i_slices)
                     sagittal_view = axial_to_sagittal(img_3d, patient_position, image_orientation,
                                                       patient_orientation)  # нарезка вертикальных срезов
-                    slice_mean = sagittal_view.shape[-1] // 2  # Вычисляем средний срез
+                    front_slice_mean_num = sagittal_view.shape[-1] // 2  # Вычисляем номер среднего среза -> int
+                    front_slice_mean = sagittal_view[:, :, front_slice_mean_num] # Срез без нормализации
                     # Нормализуем пиксели в диапазоне 0....255
-                    slise_save = cv2.normalize(slice_mean, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+                    front_slice_norm = cv2.normalize(front_slice_mean, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+
+                    cv2.namedWindow('slise_save', cv2.WINDOW_NORMAL)
+                    cv2.imshow('slise_save', front_slice_norm)
+                    cv2.waitKey(0)
+                    cv2.destroyAllWindows()
                     # ribs = predict(slise_save)
                     # slice_eit = search_slice(ribs)
                     #
@@ -44,7 +51,7 @@ async def upload_file(file: UploadFile = File(...)):
                     # save_coord(masks_list)
 
                 except Exception as e:
-                    logger.error(f"Ошибка при чтении файла {file_name}: {e}")
+                    logger.error(f"Ошибка обработке файла {file_name}: {e}")
                     continue  # Пропускаем файл, если он не может быть прочитан
 
         logger.info("Архив успешно обработан")
