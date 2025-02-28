@@ -1,8 +1,9 @@
 import requests
 import streamlit as st
-
+from PIL import Image
+import io
 from frontend_utils import dicom_sequence_to_zip
-
+import base64
 # Настройка страницы
 st.set_page_config(page_title="", layout="wide")
 st.markdown("<h2 style='text-align: center; color: white;'>Сервис формирования датасета для ЭИТ</h2>", unsafe_allow_html=True)
@@ -54,9 +55,15 @@ if __name__ == "__main__":
                 files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
                 response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
                 if response.status_code == 200:
-                    st.success("Файлы успешно отправлены на обработку!")
+                    response_data = response.json()
+                    # Декодируем изображение из base64
+                    img_data = base64.b64decode(response_data["image"])
+                    img = Image.open(io.BytesIO(img_data))
+                    st.image(img)
+                    st.write("Сообщение:", response_data["message"])
+                    st.write("Время выполнения:", response_data["execution_time"], "c")
                 else:
-                    st.error(f"Ошибка: {response.status_code}")
+                    print("Ошибка:", response.json())
             elif generation_mode == "dicom_sequences_custom":
                 st.write('run dicom_sequences_custom')
             elif generation_mode == "dicom_frame":
