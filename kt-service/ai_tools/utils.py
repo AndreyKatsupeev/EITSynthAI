@@ -176,9 +176,9 @@ def search_number_axial_slice(detections, image_width=512):
     # Фильтрация координат, оставляем только те, что правее середины
     right_side_coordinates = [box for box in coordinates if box[0] > midpoint]
 
-    # Сортировка по оси X (по первому элементу каждого бокса)
-    sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[0])
-    number_axial_slice = int(len(sorted_right_side_coordinates)/2)
+    # Сортировка по оси Y (по второму элементу каждого бокса)
+    sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
+    number_axial_slice = int(abs(sorted_right_side_coordinates[7] - sorted_right_side_coordinates[8]))
 
     return number_axial_slice
 

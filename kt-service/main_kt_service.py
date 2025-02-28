@@ -1,19 +1,25 @@
-import cv2
 import logging
 import zipfile
+from PIL import Image
+from fastapi.responses import StreamingResponse, JSONResponse
+import numpy
+import io
+import time
+import base64
 
-from collections import defaultdict
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Response
 from io import BytesIO
-from typing import Dict
 
-from utils.utils import axial_to_sagittal, convert_to_3d, create_dicom_dict
+from ai_tools.ai_tools import DICOMSequencesToMask
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+dicom_seq_to_mask = DICOMSequencesToMask()
 
 
 @app.post("/uploadDicomSequence")
@@ -23,39 +29,38 @@ async def upload_file(file: UploadFile = File(...)):
         contents = await file.read()
         zip_buffer = BytesIO(contents)
 
-        # Словарь для хранения файлов в памяти
-        extracted_files: Dict[str, str] = {}
-        series_dict = defaultdict(list)
+        # Замеряем время выполнения функции search_front_slise
+        start_time = time.time()  # Засекаем начальное время
+        answer = dicom_seq_to_mask.get_abs_coordinate_slice_from_dicom(zip_buffer)
+        end_time = time.time()  # Засекаем конечное время
+        execution_time = round(end_time - start_time, 2)  # Вычисляем время выполнения
 
-        # Разархивирование в память
-        with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-            dicom_dict = create_dicom_dict(zip_file)
-            for i_slices in dicom_dict[0].values():
-                try:
-                    img_3d, patient_position, image_orientation, patient_orientation = convert_to_3d(i_slices)
-                    sagittal_view = axial_to_sagittal(img_3d, patient_position, image_orientation,
-                                                      patient_orientation)  # нарезка вертикальных срезов
-                    front_slice_mean_num = sagittal_view.shape[-1] // 2  # Вычисляем номер среднего среза -> int
-                    front_slice_mean = sagittal_view[:, :, front_slice_mean_num] # Срез без нормализации
-                    # Нормализуем пиксели в диапазоне 0....255
-                    front_slice_norm = cv2.normalize(front_slice_mean, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+        # Проверяем, что answer — это массив NumPy
+        if isinstance(answer, numpy.ndarray):
+            # Преобразуем массив NumPy в изображение PIL
+            if answer.dtype != numpy.uint8:  # Если данные не в формате uint8, нормализуем их
+                answer = (answer * 255).astype(numpy.uint8)
+            pil_image = Image.fromarray(answer)
 
-                    cv2.namedWindow('slise_save', cv2.WINDOW_NORMAL)
-                    cv2.imshow('slise_save', front_slice_norm)
-                    cv2.waitKey(0)
-                    cv2.destroyAllWindows()
-                    # ribs = predict(slise_save)
-                    # slice_eit = search_slice(ribs)
-                    #
-                    # masks_list = predict_maks(slice_eit)
-                    # save_coord(masks_list)
+            # Преобразуем изображение в байтовый поток
+            img_byte_arr = io.BytesIO()
+            pil_image.save(img_byte_arr, format='JPEG')  # Сохраняем в формате JPEG
+            img_byte_arr.seek(0)  # Перемещаем указатель в начало потока
 
-                except Exception as e:
-                    logger.error(f"Ошибка обработке файла {file_name}: {e}")
-                    continue  # Пропускаем файл, если он не может быть прочитан
+            # Кодируем изображение в base64 (если нужно)
+            img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
 
-        logger.info("Архив успешно обработан")
-        return {"message": "Файлы успешно разархивированы", "files": extracted_files}
+            logger.info("Архив успешно обработан")
+            # Возвращаем JSON с изображением и временем выполнения
+            return JSONResponse(content={
+                "message": "Файлы успешно обработаны",
+                "execution_time": execution_time,  # Время выполнения
+                "image": img_base64  # Изображение в формате base64
+            })
+
+        # Если answer — это не массив NumPy, возвращаем ошибку
+        logger.error("Ожидался массив NumPy, но получен другой тип данных")
+        raise HTTPException(status_code=500, detail="Ожидался массив NumPy, но получен другой тип данных")
 
     except zipfile.BadZipFile:
         logger.error("Загруженный файл не является корректным ZIP-архивом")
