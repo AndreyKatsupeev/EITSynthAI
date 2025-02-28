@@ -100,9 +100,9 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
 
     # Если направление строк или столбцов указывает в противоположную сторону, переворачиваем изображение
     if row_orientation[0] == -1:  # Если ось X направлена влево
-        sagittal_view = np.flip(sagittal_view, axis=1)  # Переворот по оси Y
+        sagittal_view = numpy.flip(sagittal_view, axis=1)  # Переворот по оси Y
     if col_orientation[1] == -1:  # Если ось Y направлена назад
-        sagittal_view = np.flip(sagittal_view, axis=2)  # Переворот по оси Z
+        sagittal_view = numpy.flip(sagittal_view, axis=2)  # Переворот по оси Z
 
     # Коррекция на основе PatientOrientation
     # PatientOrientation описывает, как пациент ориентирован относительно плоскости изображения
