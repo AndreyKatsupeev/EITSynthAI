@@ -7,7 +7,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from io import BytesIO
 from typing import Dict
 
-from utils.utils import axial_to_sagittal, convert_to_3d, create_dicom_list
+from utils.utils import axial_to_sagittal, convert_to_3d, create_dicom_dict
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +29,7 @@ async def upload_file(file: UploadFile = File(...)):
 
         # Разархивирование в память
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-            dicom_dict = create_dicom_list(zip_file)
+            dicom_dict = create_dicom_dict(zip_file)
             for i_slices in dicom_dict[0].values():
                 try:
                     img_3d, patient_position, image_orientation, patient_orientation = convert_to_3d(i_slices)

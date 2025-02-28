@@ -1,4 +1,6 @@
 import base64
+import cv2
+from collections import defaultdict
 import logging
 import numpy
 import pydicom
@@ -9,21 +11,23 @@ from pydicom.filebase import DicomBytesIO
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def create_dicom_list(zip_file):
+
+def create_dicom_dict(zip_file):
+    """"""
+    series_dict = defaultdict(list)
     for file_name in zip_file.namelist():
         logger.info(f"Обработка файла: {file_name}")
-        try:
-            # Чтение файла в бинарном режиме и кодирование в base64
-            file_data = zip_file.read(file_name)
-            extracted_files[file_name] = base64.b64encode(file_data).decode('utf-8')
+        # Чтение файла в бинарном режиме и кодирование в base64
+        file_data = zip_file.read(file_name)
+        # extracted_files[file_name] = base64.b64encode(file_data).decode('utf-8')
+        # Чтение DICOM-файла
+        dicom_data = DicomBytesIO(file_data)
+        dicom_data_slice_with_meta = pydicom.dcmread(dicom_data)
 
-            # Чтение DICOM-файла
-            dicom_data = DicomBytesIO(file_data)
-            dicom_data_slice = pydicom.dcmread(dicom_data)
-            series_uid = dicom_data_slice.SeriesInstanceUID
-            series_dict[series_uid].append(dicom_data_slice)
+        series_uid = dicom_data_slice_with_meta.SeriesInstanceUID
+        series_dict[series_uid].append(dicom_data_slice_with_meta)
+    return series_dict, series_uid
 
-            logger.info(f"Метаданные DICOM: PatientName={patient_name}, StudyDate={study_date}")
 
 def convert_to_3d(slices):
     """
@@ -81,9 +85,9 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
 
     # Если направление строк или столбцов указывает в противоположную сторону, переворачиваем изображение
     if row_orientation[0] == -1:  # Если ось X направлена влево
-        sagittal_view = np.flip(sagittal_view, axis=1)  # Переворот по оси Y
+        sagittal_view = numpy.flip(sagittal_view, axis=1)  # Переворот по оси Y
     if col_orientation[1] == -1:  # Если ось Y направлена назад
-        sagittal_view = np.flip(sagittal_view, axis=2)  # Переворот по оси Z
+        sagittal_view = numpy.flip(sagittal_view, axis=2)  # Переворот по оси Z
 
     # Коррекция на основе PatientOrientation
     # PatientOrientation описывает, как пациент ориентирован относительно плоскости изображения
