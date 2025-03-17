@@ -1,0 +1,8 @@
+toml
+opencv-python
+numpy
+pydicom
+tqdm
+supervision
+lungmask
+SimpleITK
