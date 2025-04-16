@@ -18,6 +18,7 @@ import numpy
 import os
 import pydicom
 import toml
+from scipy.ndimage import label
 
 from tqdm import tqdm
 from os.path import basename
@@ -26,7 +27,7 @@ from sklearn.cluster import KMeans
 
 # Путь к вашему файлу DICOM
 
-path_to_save_image_log = f'../../save_test_masks/'
+path_to_save_image_log = f'../../save_test_masks/segment/'
 
 
 def check_work_folders(path):
@@ -49,7 +50,8 @@ def get_files_path(config=None):
     # files_path = config['']['']
     file_path_list = []
     # files_path = '/media/msi/fsi/fsi/datasets_mrt/svalka/new/FT_CT_LUNGCR/CT_LUNGCR/1.2.643.5.1.13.13.12.2.77.8252.00060202040815091514020315000411/1.2.643.5.1.13.13.12.2.77.8252.13090901090012030215010003150408'
-    files_path = '/media/msi/fsi/fsi/test'
+    # files_path = '/media/msi/fsi/fsi/datasets_mrt/dicom_axial_dataset_v1'
+    files_path = '/media/msi/fsi/fsi/datasets_mrt/dicom_axial_dataset_v1/dicom'
 
     for dir, _, files in os.walk(files_path):
         # Обрабатываем каждый файл в текущей папке
@@ -247,6 +249,30 @@ def find_point_conductivity(contour):
     # Если ничего не нашли, возвращаем первую точку контура
     return int(contour[0][0][0]), int(contour[0][0][1])
 
+
+def abs_to_yolo(coord_str, image_shape):
+    """Преобразует абсолютные координаты в YOLO-формат, замыкая контур, если нужно."""
+    # Проверяем, замкнут ли контур (последняя точка == первой)
+    first_point = coord_str[0][0]
+    last_point = coord_str[-1][0]
+
+    # Если контур не замкнут, добавляем первую точку в конец
+    if (first_point != last_point).any():
+        coord_str = np.append(coord_str, [[first_point]], axis=0)
+
+    # Преобразуем в относительные координаты YOLO
+    end_list = []
+    for i in coord_str:
+        xc = i[0][0] / image_shape[1]
+        yc = i[0][1] / image_shape[0]
+        end_list.append(xc)
+        end_list.append(yc)
+
+    return " ".join(str(x) for x in end_list)
+
+
+
+
 def create_femm_mask_file(mask_list, color_output, img_normalized, final_output, pixel_spacing, file_name):
     """
 
@@ -269,6 +295,8 @@ def create_femm_mask_file(mask_list, color_output, img_normalized, final_output,
         msk_contours, hierarchy = cv2.findContours(msk[0],
                                                    cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         for cnt in msk_contours:
+            if len(cnt) < 5:
+                continue
             x_point_conductivity, y_point_conductivity = find_point_conductivity(cnt)
 
             scaled_contours_str = ""
@@ -281,10 +309,14 @@ def create_femm_mask_file(mask_list, color_output, img_normalized, final_output,
             # cv2.namedWindow('img_normalized', cv2.WINDOW_NORMAL)
             # cv2.imshow('img_normalized', img_normalized_n)
             # cv2.waitKey(0)
-            for point in scaled_contour:
-                scaled_contours_str += f"{float(point[0][0])} {float(point[0][1])} "
+            scaled_contour = abs_to_yolo(scaled_contour, img_normalized_clear.shape)
+            # print(scaled_contour)
+            # for point in scaled_contour:
+            #     scaled_contours_str += f"{float(point[0][0])} {float(point[0][1])} "
 
-            path_to_save_labels = f'../../save_test_masks/{file_name}/'
+
+
+            path_to_save_labels = f'../../save_test_masks/segment/{file_name}/'
 
             check_work_folders(os.path.join(os.getcwd(), path_to_save_labels))
 
@@ -292,15 +324,16 @@ def create_femm_mask_file(mask_list, color_output, img_normalized, final_output,
 
             if not check_labels:
                 with open(f'{path_to_save_labels}/{file_name}.txt', "w") as file:
-                    file.write(f'{class_msk} {scaled_contours_str}' "\n")
+                    file.write(f'{class_msk} {scaled_contour}' "\n")
             else:
                 with open(f'{path_to_save_labels}/{file_name}.txt', "a") as file:
                     file.seek(0, 2)  # перемещение курсора в конец файла
-                    file.write(f'{class_msk} {scaled_contours_str}' "\n")
+                    file.write(f'{class_msk} {scaled_contour}' "\n")
 
     cv2.imwrite(f'{path_to_save_labels}10_{file_name}_img_normalized.jpg', cv2.resize(img_normalized, (1000, 1000)))
     cv2.imwrite(f'{path_to_save_labels}{file_name}_final_output.jpg', cv2.resize(final_output, (1000, 1000)))
     cv2.imwrite(f'{path_to_save_labels}{file_name}.jpg', img_normalized_clear)
+
 
     return None
 
@@ -334,19 +367,58 @@ def get_only_body_mask(hu_img):
     return only_body_mask
 
 
-def clear_color_output(only_body_mask, color_output, tolerance=5):
+def clear_color_output(only_body_mask, color_output, tolerance=5, min_polygon_size=5):
     mask_organs_processed = color_output.copy()
+    h, w = mask_organs_processed.shape[:2]
 
-    # Поиск почти черных пикселей с допуском
+    # 1. Закрашиваем почти чёрные пиксели внутри тела красным
     is_black = numpy.all(numpy.abs(color_output - [0, 0, 0]) <= tolerance, axis=2)
-    black_coords = numpy.where(is_black)
+    is_in_body = (only_body_mask == 255)
+    to_fill = is_black & is_in_body
+    mask_organs_processed[to_fill] = [0, 0, 255]  # Красный в BGR
 
-    # Фильтрация по маске тела (only_body_mask == 255)
-    is_in_body = only_body_mask[black_coords] == 255
-    filtered_coords = (black_coords[0][is_in_body], black_coords[1][is_in_body])
+    # 2. Находим все связные области (полигоны), кроме фона (чёрного/красного)
+    background_colors = [
+        [0, 0, 0],     # Чёрный
+        [0, 0, 255]     # Красный (уже закрашенные области)
+    ]
+    is_background = numpy.zeros((h, w), dtype=bool)
+    for color in background_colors:
+        is_background |= numpy.all(mask_organs_processed == color, axis=2)
 
-    # Замена на красный (BGR-формат: (0, 0, 255))
-    mask_organs_processed[filtered_coords] = [0, 0, 255]
+    # Размечаем все связные области (каждый полигон получает уникальный label)
+    labeled, num_features = label(~is_background)
+
+    # 3. Проходим по всем полигонам и закрашиваем маленькие (<5 пикселей)
+    for label_idx in range(1, num_features + 1):
+        polygon_mask = (labeled == label_idx)
+        polygon_size = numpy.sum(polygon_mask)
+
+        if polygon_size < min_polygon_size:
+            # Находим соседние цвета (игнорируя чёрный и красный)
+            y, x = numpy.where(polygon_mask)
+            neighbors = []
+
+            # Проверяем 8-связных соседей для каждой точки полигона
+            for dy, dx in [(-1, -1), (-1, 0), (-1, 1),
+                           (0, -1),          (0, 1),
+                           (1, -1),  (1, 0), (1, 1)]:
+                ny, nx = y + dy, x + dx
+                valid = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+                ny, nx = ny[valid], nx[valid]
+
+                for color in mask_organs_processed[ny, nx]:
+                    if not any(numpy.array_equal(color, bg_color) for bg_color in background_colors):
+                        neighbors.append(tuple(color))  # Конвертируем в кортеж для хеширования
+
+            if neighbors:
+                # Находим самый частый цвет среди соседей (по хешу кортежа)
+                from collections import Counter
+                neighbor_color = Counter(neighbors).most_common(1)[0][0]
+                mask_organs_processed[polygon_mask] = neighbor_color
+            else:
+                # Если соседей нет, закрашиваем красным (как фоновым)
+                mask_organs_processed[polygon_mask] = [0, 0, 255]
 
     return mask_organs_processed
 
@@ -360,7 +432,6 @@ def spine_bone_search(only_bone_hu_img):
     Returns:
 
     """
-    print(only_bone_hu_img)
     only_spine_bone_hu_img = []
 
     return only_spine_bone_hu_img
@@ -509,41 +580,74 @@ def crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color):
     return color_output_all
 
 
+import numpy as np
+import cv2
+from collections import defaultdict
+
+
 def highlight_small_masks(image, area_threshold=5):
-    """"""
-    # Цвета масок (в BGR, так как OpenCV использует BGR, а не RGB)
     mask_colors = {
-        "bone": (255, 255, 255),  # Белый (кость)
-        "muscle": (0, 0, 255),  # Красный (мышца)
-        "fat": (0, 255, 255),  # Жёлтый (жир)
-        "air": (0, 150, 255),  # Оранжевый (воздух)
+        "bone": (255, 255, 255),
+        "muscle": (0, 0, 255),
+        "fat": (0, 255, 255),
+        "air": (0, 150, 255),
     }
 
-    # Жёлтый цвет для заливки маленьких масок (BGR)
-    YELLOW = (0, 255, 255)
+    output = image.copy()
 
-    # Проходимся по каждому цвету маски
     for tissue, target_color in mask_colors.items():
-        # Создаём маску для текущего цвета (допускаем небольшие вариации)
         lower = numpy.array(target_color, dtype=numpy.int16) - 10
         upper = numpy.array(target_color, dtype=numpy.int16) + 10
         mask = cv2.inRange(image, lower, upper)
 
-        # Находим контуры
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Закрашиваем маленькие маски жёлтым
         for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area < area_threshold:
-                cv2.drawContours(image, [cnt], -1, YELLOW, thickness=cv2.FILLED)
+            if len(cnt) <= area_threshold:
+                contour_mask = numpy.zeros(image.shape[:2], dtype=numpy.uint8)
+                cv2.drawContours(contour_mask, [cnt], -1, 255, cv2.FILLED)
 
-    return image
+                dilated = cv2.dilate(contour_mask, numpy.ones((3, 3), np.uint8), iterations=1)
+                neighbors_mask = dilated - contour_mask
+                neighbor_colors = output[neighbors_mask == 255]
+
+                if len(neighbor_colors) > 0:
+                    neighbor_colors = [tuple(c) for c in neighbor_colors
+                                       if not numpy.array_equal(c, target_color)
+                                       and not numpy.array_equal(c, (0, 0, 0))]
+
+                    if neighbor_colors:
+                        # Use the most common neighbor color (as a tuple)
+                        from collections import Counter
+                        fill_color = Counter(neighbor_colors).most_common(1)[0][0]
+                    else:
+                        fill_color = target_color  # Fallback to original color
+                else:
+                    fill_color = target_color  # No neighbors: keep original
+
+                # Ensure fill_color is a tuple of integers
+                fill_color = tuple(map(int, fill_color))
+                cv2.drawContours(output, [cnt], -1, fill_color, thickness=cv2.FILLED)
+
+    return output
+
+def vignetting_image_normalization(new_image):
+    """
+    Виньетирование (отсечение крайних значений)
+    DICOM-изображения могут содержать выбросы (очень тёмные/светлые пиксели), которые "сжимают" полезный диапазон.
+    Args:
+        new_image:
+
+    Returns:
+
+    """
+    p_low, p_high = numpy.percentile(new_image, [2, 98])  # Отсекаем 2% самых тёмных и светлых пикселей
+    img_clipped = numpy.clip(new_image, p_low, p_high)
+    img_normalized = (img_clipped - p_low) / (p_high - p_low) * 255.0
+    return img_normalized
 
 def create_femm_dataset():
     """"""
-    file_path_list = [
-        '/media/msi/fsi/fsi/test']
     file_path_list = get_files_path()
     bone_mask = []
     for dcm_file in tqdm(file_path_list):
@@ -553,11 +657,10 @@ def create_femm_dataset():
         dir_name = dir_name.replace('.', '_')
         file_name = file_name.replace('.', '_')
         ds = pydicom.dcmread(dcm_file)
-        for i in ds:
-            print(i)
+        # for i in ds:
+        #     print(i)
         new_image = ds.pixel_array
         new_image = numpy.flipud(new_image)
-
         rescale_slope = get_rescale_slope(ds)
         rescale_intercept = get_rescale_intercept(ds)
         # Получаем оригинальную картинку с глубиной HU
@@ -608,7 +711,8 @@ def create_femm_dataset():
 
         if new_image.dtype != numpy.uint8:
             # Нормализация в диапазон 0-255, сохраняя относительную яркость пикселей
-            img_normalized = (new_image - new_image.min()) / (new_image.max() - new_image.min()) * 255.0
+            # img_normalized = (new_image - new_image.min()) / (new_image.max() - new_image.min()) * 255.0
+            img_normalized = vignetting_image_normalization(new_image)
             img_normalized = img_normalized.astype(numpy.uint8)
         else:
             img_normalized = new_image
