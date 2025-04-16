@@ -40,6 +40,8 @@ def convert_to_3d(slices):
     :param slices: список срезов с метаинформацией
     :return:
     """
+    # for i in slices:
+    #     print(slices[(0x0020, 0x0032)])
     # Сортировка срезов по положению (при необходимости)
     slices.sort(key=lambda x: int(x.InstanceNumber))
     # Извлечение массива пиксельных данных
@@ -68,7 +70,7 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
     :param ds: DICOM dataset (содержит метаданные, включая PatientPosition, ImageOrientationPatient и PatientOrientation)
     :return: 3D-массив в сагиттальной плоскости
     """
-
+    patient_position = 'FFS'
     # Перестановка осей для преобразования аксиального в сагиттальный вид
     if patient_position == 'FFS':
         sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
@@ -171,6 +173,7 @@ def search_number_axial_slice(detections, image_width=512):
         [False, False, False, ..., False, False, False],
         [False, False, False, ..., False, False, False]]]), confidence=array([    0.79298,     0.79022,     0.77921,     0.77907,      0.7766,     0.77603,     0.77508,     0.77445,     0.77365,     0.77216,     0.76479,     0.76349,     0.76013,      0.7598,     0.75843,     0.75402,     0.75367,      0.7343,     0.69417], dtype=float32), class_id=array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), tracker_id=None, data={'class_name': array(['rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib'], dtype='<U3')}, metadata={})
 """
+    number_axial_slice_list = []
     coordinates = detections.xyxy
     midpoint = image_width / 2
     # Фильтрация координат, оставляем только те, что правее середины
@@ -178,9 +181,11 @@ def search_number_axial_slice(detections, image_width=512):
 
     # Сортировка по оси Y (по второму элементу каждого бокса)
     sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
-    number_axial_slice = int(abs(sorted_right_side_coordinates[7] - sorted_right_side_coordinates[8]))
-
-    return number_axial_slice
+    number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1]))/2)
+    number_axial_slice_list.append(int(sorted_right_side_coordinates[5][1]))
+    number_axial_slice_list.append(int(sorted_right_side_coordinates[6][1]))
+    number_axial_slice_list.append(number_axial_slice)
+    return number_axial_slice_list
 
 def create_answer():
     pass

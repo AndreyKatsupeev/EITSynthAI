@@ -23,6 +23,7 @@ class DICOMSequencesToMask(abc.ABC):
         if model_path:
             self.model_path = model_path
         else:
+            print(os.getcwd())
             self.model_path = config.ribs_segm_model
         self.model = self.__load_model(self.model_path)
 
@@ -53,16 +54,21 @@ class DICOMSequencesToMask(abc.ABC):
     def ribs_predict(self, front_slice):
         """"""
         front_slice = cv2.cvtColor(front_slice, cv2.COLOR_BGR2RGB)
-        results = self.model(front_slice, conf=0.3, verbose=False, save=True)
+        cv2.namedWindow('slise_save', cv2.WINDOW_NORMAL)
+        cv2.imshow('slise_save', front_slice)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        results = self.model(front_slice, conf=0.3, verbose=False)
         detections = sv.Detections.from_ultralytics(results[0])
         return detections
 
-    def search_axial_slice(self, detections):
+    def search_axial_slice(self, detections, i_slices):
         """"""
-        axial_slice = None
-        slice_eit = search_number_axial_slice(detections)
-
-        return axial_slice
+        axial_slice_list = []
+        number_slice_eit_list = search_number_axial_slice(detections)
+        for i in number_slice_eit_list:
+            axial_slice_list.append(i_slices[i])
+        return axial_slice_list
 
     def get_abs_coordinate_slice_from_dicom(self, zip_buffer, answer=None):
         """"""
