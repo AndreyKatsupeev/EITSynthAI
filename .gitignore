@@ -71,6 +71,7 @@ wandb
 *uploads
 *video
 *weights
+*image_log
 *test.py
 *temp_img
 *images_obj
