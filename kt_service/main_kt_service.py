@@ -17,7 +17,6 @@ from pathlib import Path
 # Добавляем папку `kt-service` в PYTHONPATH
 sys.path.append(str(Path(__file__).parent))
 
-
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,28 +39,9 @@ async def upload_file(file: UploadFile = File(...)):
         end_time = time.time()  # Засекаем конечное время
         execution_time = round(end_time - start_time, 2)  # Вычисляем время выполнения
 
-        # Проверяем, что answer — это массив NumPy
-        if isinstance(answer, numpy.ndarray):
-            # Преобразуем массив NumPy в изображение PIL
-            if answer.dtype != numpy.uint8:  # Если данные не в формате uint8, нормализуем их
-                answer = (answer * 255).astype(numpy.uint8)
-            pil_image = Image.fromarray(answer)
-
-            # Преобразуем изображение в байтовый поток
-            img_byte_arr = io.BytesIO()
-            pil_image.save(img_byte_arr, format='JPEG')  # Сохраняем в формате JPEG
-            img_byte_arr.seek(0)  # Перемещаем указатель в начало потока
-
-            # Кодируем изображение в base64 (если нужно)
-            img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
-
-            logger.info("Архив успешно обработан")
-            # Возвращаем JSON с изображением и временем выполнения
-            return JSONResponse(content={
-                "message": "Файлы успешно обработаны",
-                "execution_time": execution_time,  # Время выполнения
-                "image": img_base64  # Изображение в формате base64
-            })
+        logger.info("Архив успешно обработан")
+        # Возвращаем JSON с изображением и временем выполнения
+        return answer
 
         # Если answer — это не массив NumPy, возвращаем ошибку
         logger.error("Ожидался массив NumPy, но получен другой тип данных")

@@ -94,13 +94,15 @@ class DICOMSequencesToMask(abc.ABC):
         ribs_annotated_image = draw_annotate(ribs_detections, front_slice, number_slice_eit_list)
         axial_segmentations = self.axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, axial_slice_norm_body, ribs_annotated_image)
+        segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
+                                                                        ribs_annotated_image, axial_slice_norm_body)
+
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
         axial_slice_mask = 0
         axial_slice_mask_coord = 0
 
-        answer = create_answer(ribs_annotated_image, ribs_detections, axial_slice)
+        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt)
         return answer
 
 #

@@ -5,9 +5,12 @@ import logging
 import numpy
 import pydicom
 import supervision as sv
-
+from scipy.ndimage import label
 from pydicom.filebase import DicomBytesIO
-
+import base64
+from io import BytesIO
+from PIL import Image
+from fastapi.responses import JSONResponse
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -232,9 +235,48 @@ def draw_annotate(ribs_detections, front_slice, axial_slice_list_numbers):
     return annotated_image
 
 
+def overlay_segmentation_masks(segmentation_dict):
+    # Получаем размеры из первого изображения
+    first_key = next(iter(segmentation_dict))
+    height, width = segmentation_dict[first_key].shape[:2]
+
+    # Создаем пустое RGB изображение
+    overlay = numpy.zeros((height, width, 3), dtype=numpy.uint8)
+
+    # Цвета для разных сегментов (BGR формат)
+    colors = {
+        "adipose": (0, 255, 255),
+        "bone": (255, 255, 255),
+        "muscles": (0, 0, 255),
+        "lung": (255, 255, 0)
+    }
+
+    for name, mask in segmentation_dict.items():
+        # Нормализуем маску (на случай если она не бинарная)
+        if mask.dtype != numpy.uint8:
+            mask = mask.astype(numpy.uint8)
+
+        # Если маска трехканальная, преобразуем в одноканальную
+        if len(mask.shape) == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
+        # Создаем цветную маску
+        color = colors.get(name, [255, 255, 255])
+        colored_mask = numpy.zeros((height, width, 3), dtype=numpy.uint8)
+
+        # Применяем цвет только к ненулевым пикселям
+        mask_bool = mask > 0
+        colored_mask[mask_bool] = color
+
+        # Накладываем на общее изображение
+        overlay = cv2.add(overlay, colored_mask)
+    return overlay
+
+
 def create_segmentations_masks(axial_segmentations, img_size=512):
     # Цвета для каждого класса
     # Цвета для каждого класса
+
     clrs = {
         "adipose": (0, 255, 255),
         "bone": (255, 255, 255),
@@ -382,81 +424,248 @@ def get_hu(pixel_value, rescale_intercept=0, rescale_slope=1.0):
     return hounsfield_units
 
 
-def create_segmentations_masks_full(segmentation_masks_image, axial_slice_norm_body, ribs_annotated_image):
-    # Параметры для текста
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.5
-    font_color = (255, 255, 255)  # белый цвет
-    thickness = 1
+def clear_color_output(only_body_mask, color_output, tolerance=5, min_polygon_size=5):
+    mask_organs_processed = color_output.copy()
+    h, w = mask_organs_processed.shape[:2]
 
-    # Создаем список изображений в нужном порядке с их названиями
-    images_with_labels = [
-        (ribs_annotated_image, "ribs_annotated_image"),
-        (axial_slice_norm_body, "axial_slice_norm_body")
+    # 1. Закрашиваем почти чёрные пиксели внутри тела красным
+    is_black = numpy.all(numpy.abs(color_output - [0, 0, 0]) <= tolerance, axis=2)
+    is_in_body = (only_body_mask == 255)
+    to_fill = is_black & is_in_body
+    mask_organs_processed[to_fill] = [0, 0, 255]  # Красный в BGR
+
+    # 2. Находим все связные области (полигоны), кроме фона (чёрного/красного)
+    background_colors = [
+        [0, 0, 0],  # Чёрный
+        [0, 0, 255]  # Красный (уже закрашенные области)
+    ]
+    is_background = numpy.zeros((h, w), dtype=bool)
+    for color in background_colors:
+        is_background |= numpy.all(mask_organs_processed == color, axis=2)
+
+    # Размечаем все связные области (каждый полигон получает уникальный label)
+    labeled, num_features = label(~is_background)
+
+    # 3. Проходим по всем полигонам и закрашиваем маленькие (<5 пикселей)
+    for label_idx in range(1, num_features + 1):
+        polygon_mask = (labeled == label_idx)
+        polygon_size = numpy.sum(polygon_mask)
+
+        if polygon_size < min_polygon_size:
+            # Находим соседние цвета (игнорируя чёрный и красный)
+            y, x = numpy.where(polygon_mask)
+            neighbors = []
+
+            # Проверяем 8-связных соседей для каждой точки полигона
+            for dy, dx in [(-1, -1), (-1, 0), (-1, 1),
+                           (0, -1), (0, 1),
+                           (1, -1), (1, 0), (1, 1)]:
+                ny, nx = y + dy, x + dx
+                valid = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+                ny, nx = ny[valid], nx[valid]
+
+                for color in mask_organs_processed[ny, nx]:
+                    if not any(numpy.array_equal(color, bg_color) for bg_color in background_colors):
+                        neighbors.append(tuple(color))  # Конвертируем в кортеж для хеширования
+
+            if neighbors:
+                # Находим самый частый цвет среди соседей (по хешу кортежа)
+                from collections import Counter
+                neighbor_color = Counter(neighbors).most_common(1)[0][0]
+                mask_organs_processed[polygon_mask] = neighbor_color
+            else:
+                # Если соседей нет, закрашиваем красным (как фоновым)
+                mask_organs_processed[polygon_mask] = [0, 0, 255]
+
+    return mask_organs_processed
+
+
+def highlight_small_masks(image, area_threshold=5):
+    mask_colors = {
+        "bone": (255, 255, 255),
+        "muscle": (0, 0, 255),
+        "fat": (0, 255, 255),
+        "air": (0, 150, 255),
+    }
+
+    output = image.copy()
+
+    for tissue, target_color in mask_colors.items():
+        lower = numpy.array(target_color, dtype=numpy.int16) - 10
+        upper = numpy.array(target_color, dtype=numpy.int16) + 10
+        mask = cv2.inRange(image, lower, upper)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            if len(cnt) <= area_threshold:
+                contour_mask = numpy.zeros(image.shape[:2], dtype=numpy.uint8)
+                cv2.drawContours(contour_mask, [cnt], -1, 255, cv2.FILLED)
+
+                dilated = cv2.dilate(contour_mask, numpy.ones((3, 3), numpy.uint8), iterations=1)
+                neighbors_mask = dilated - contour_mask
+                neighbor_colors = output[neighbors_mask == 255]
+
+                if len(neighbor_colors) > 0:
+                    neighbor_colors = [tuple(c) for c in neighbor_colors
+                                       if not numpy.array_equal(c, target_color)
+                                       and not numpy.array_equal(c, (0, 0, 0))]
+
+                    if neighbor_colors:
+                        # Use the most common neighbor color (as a tuple)
+                        from collections import Counter
+                        fill_color = Counter(neighbor_colors).most_common(1)[0][0]
+                    else:
+                        fill_color = target_color  # Fallback to original color
+                else:
+                    fill_color = target_color  # No neighbors: keep original
+
+                # Ensure fill_color is a tuple of integers
+                fill_color = tuple(map(int, fill_color))
+                cv2.drawContours(output, [cnt], -1, fill_color, thickness=cv2.FILLED)
+
+    return output
+
+
+def overlay_masks_with_transparency(base_image, color_mask, alpha=0.8):
+    """
+    Наложение цветной маски на базовое изображение с прозрачностью
+
+    Параметры:
+    - base_image: базовое изображение (512, 512)
+    - color_mask: цветная маска (512, 512, 3)
+    - alpha: уровень прозрачности (0-1)
+    """
+    # 1. Конвертируем базовое изображение в RGB (если оно grayscale)
+    if len(base_image.shape) == 2:
+        base_image = cv2.cvtColor(base_image, cv2.COLOR_GRAY2BGR)
+
+    # 2. Нормализуем изображения (если нужно)
+    if base_image.dtype != numpy.uint8:
+        base_image = cv2.normalize(base_image, None, 0, 255, cv2.NORM_MINMAX).astype(numpy.uint8)
+
+    if color_mask.dtype != numpy.uint8:
+        color_mask = cv2.normalize(color_mask, None, 0, 255, cv2.NORM_MINMAX).astype(numpy.uint8)
+
+    # 3. Наложение с прозрачностью
+    overlay = cv2.addWeighted(base_image, 1.0, color_mask, alpha, 0)
+
+    return overlay
+
+
+def create_segmentations_masks_full(segmentation_masks_image, only_body_mask, ribs_annotated_image,
+                                    axial_slice_norm_body):
+    # 1. Создаем цветную маску и ее варианты
+    color_output = overlay_segmentation_masks(segmentation_masks_image)
+    color_output = clear_color_output(only_body_mask, color_output)
+    color_output = highlight_small_masks(color_output)
+    axial_slice_norm_body_with_color = overlay_masks_with_transparency(axial_slice_norm_body, color_output)
+
+    # 2. Подготавливаем все изображения для объединения
+    images_to_combine = [
+        ("1. Ribs Annotated", ribs_annotated_image),
+        ("2. Axial Slice", axial_slice_norm_body),
+        ("3. Color Masks", color_output),
+        ("4. Combined View", axial_slice_norm_body_with_color)
     ]
 
-    # Добавляем сегментационные маски из словаря
-    for key, image in segmentation_masks_image.items():
-        images_with_labels.append((image, key))
+    # Добавляем отдельные маски из словаря
+    for idx, (key, image) in enumerate(segmentation_masks_image.items(), start=5):
+        images_to_combine.append((f"{idx}. {key}", image))
 
-    # Список для хранения изображений с текстом
+    # 3. Приводим все изображения к одному размеру (берем максимальные размеры)
+    max_height = max(img.shape[0] for _, img in images_to_combine)
+    max_width = max(img.shape[1] for _, img in images_to_combine)
+
+    # 4. Добавляем подписи и выравниваем размеры
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    font_color = (255, 255, 255)
+    thickness = 1
+
     labeled_images = []
+    for label, image in images_to_combine:
+        # Конвертируем в цветное если нужно
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif image.shape[2] == 1:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-    # Добавляем текст к каждому изображению
-    for image, label in images_with_labels:
-        # Создаем копию изображения, чтобы не изменять оригинал
-        labeled_img = image.copy()
+        # Выравниваем размеры
+        if image.shape[0] != max_height or image.shape[1] != max_width:
+            image = cv2.resize(image, (max_width, max_height))
 
-        # Получаем размеры изображения
-        height, width = labeled_img.shape[:2]
+        # Создаем копию для подписи
+        labeled = image.copy()
+        h, w = labeled.shape[:2]
 
-        # Вычисляем позицию текста (центрируем)
+        # Добавляем подпись
         text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
-        text_x = (width - text_size[0]) // 2
-        text_y = (height + text_size[1]) // 2
+        text_x = (w - text_size[0]) // 2
+        text_y = h - 10  # Внизу изображения
 
-        # Добавляем текст на изображение
-        cv2.putText(labeled_img, label, (text_x, text_y), font,
+        cv2.putText(labeled, label, (text_x, text_y), font,
                     font_scale, font_color, thickness, cv2.LINE_AA)
 
-        labeled_images.append(labeled_img)
+        labeled_images.append(labeled)
 
-    # Определяем размеры сетки
+    # 5. Определяем размеры сетки
     num_images = len(labeled_images)
-    if num_images <= 2:
-        rows, cols = 1, num_images
-    elif num_images <= 4:
-        rows, cols = 2, 2
-    elif num_images <= 6:
-        rows, cols = 2, 3
-    else:
-        # Для большого количества изображений можно добавить больше вариантов
-        rows, cols = 2, (num_images + 1) // 2
+    cols = 3  # Фиксированное количество колонок
+    rows = (num_images + cols - 1) // cols  # Вычисляем нужное количество строк
 
-    # Получаем размеры первого изображения (предполагаем, что все одинакового размера)
-    img_height, img_width = labeled_images[0].shape[:2]
+    # 6. Создаем результирующее изображение
+    result = numpy.zeros((max_height * rows, max_width * cols, 3), dtype=numpy.uint8)
 
-    # Создаем пустое изображение для результата
-    result = numpy.zeros((img_height * rows, img_width * cols, 3), dtype=numpy.uint8)
-
-    # Заполняем сетку изображениями
+    # 7. Заполняем сетку изображениями
     for i in range(rows):
         for j in range(cols):
             idx = i * cols + j
-            if idx < len(labeled_images):
-                result[i * img_height:(i + 1) * img_height,
-                j * img_width:(j + 1) * img_width] = labeled_images[idx]
+            if idx < num_images:
+                y_start = i * max_height
+                y_end = (i + 1) * max_height
+                x_start = j * max_width
+                x_end = (j + 1) * max_width
+                result[y_start:y_end, x_start:x_end] = labeled_images[idx]
+    return result
 
-    # Показываем изображение
-    cv2.namedWindow('Segmentation Masks', cv2.WINDOW_NORMAL)
-    cv2.imshow("Segmentation Masks", result)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 def create_segmentation_results_cnt(axial_detections):
     """"""
-    pass
+    text = 'cnt'
+    return text
 
 
-def create_answer():
-    pass
+def create_answer(segmentation_masks_full_image, segmentation_results_cnt):
+    """
+    Формирует ответ для отправки клиенту, содержащий изображение и текстовые данные
+
+    Args:
+        segmentation_masks_full_image: изображение (numpy array)
+        segmentation_results_cnt: текстовые данные (str)
+
+    Returns:
+        dict: словарь с ответом, содержащим изображение в base64 и текст
+    """
+    # Конвертируем numpy array в изображение PIL
+    segmentation_masks_full_image = cv2.cvtColor(segmentation_masks_full_image, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(segmentation_masks_full_image)
+
+    # Конвертируем изображение в байты
+    img_byte_arr = BytesIO()
+    pil_img.save(img_byte_arr, format='PNG')
+    img_byte_arr = img_byte_arr.getvalue()
+
+    # Кодируем изображение в base64
+    img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
+
+    # Формируем ответ
+    answer = {
+        "image": img_base64,
+        "text_data": segmentation_results_cnt,
+        "status": "success",
+        "message": "Processing completed successfully"
+    }
+
+    return JSONResponse(content=answer)
+

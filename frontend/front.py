@@ -50,30 +50,48 @@ if __name__ == "__main__":
         # Обработка загруженного файла
         if button_flag and uploaded_file is not None:
             st.write("Файл успешно загружен!")
-            if generation_mode == "dicom_sequences_auto":
-                dicom_zip = dicom_sequence_to_zip(uploaded_file)
-                files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
-                response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
-                if response.status_code == 200:
-                    response_data = response.json()
-                    # Декодируем изображение из base64
-                    img_data = base64.b64decode(response_data["image"])
-                    img = Image.open(io.BytesIO(img_data))
-                    st.image(img)
-                    st.write("Сообщение:", response_data["message"])
-                    st.write("Время выполнения:", response_data["execution_time"], "c")
+
+            with st.spinner('Обработка DICOM файлов...'):
+                if generation_mode == "dicom_sequences_auto":
+                    try:
+                        dicom_zip = dicom_sequence_to_zip(uploaded_file)
+                        files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
+                        response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
+
+                        if response.status_code == 200:
+                            result = response.json()
+
+                            # Отображаем время выполнения
+                            st.success(f"Обработка завершена за {result.get('execution_time', 'N/A')} секунд")
+
+                            # Отображаем текстовые данные
+                            if 'text_data' in result:
+                                st.subheader("Результаты сегментации:")
+                                st.text(result['text_data'])
+
+                            # Отображаем изображение
+                            if 'image' in result:
+                                img_bytes = base64.b64decode(result['image'].encode('utf-8'))
+                                img = Image.open(io.BytesIO(img_bytes))
+                                st.image(img, caption="Результат сегментации", use_container_width=True)
+
+                        else:
+                            st.error(f"Ошибка обработки: {response.text}")
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Ошибка соединения с сервером: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Неожиданная ошибка: {str(e)}")
+                elif generation_mode == "dicom_sequences_custom":
+                    st.write('run dicom_sequences_custom')
+                elif generation_mode == "dicom_frame":
+                    st.write('run dicom_frame')
+                elif generation_mode == "jpg_png":
+                    st.write('run jpg_png')
+                elif generation_mode == "nii":
+                    st.write('run nii')
                 else:
-                    print("Ошибка:", response.json())
-            elif generation_mode == "dicom_sequences_custom":
-                st.write('run dicom_sequences_custom')
-            elif generation_mode == "dicom_frame":
-                st.write('run dicom_frame')
-            elif generation_mode == "jpg_png":
-                st.write('run jpg_png')
-            elif generation_mode == "nii":
-                st.write('run nii')
-            else:
-                print('error')
+                    print('error')
 
     with tab2:
         st.write('run tests')
