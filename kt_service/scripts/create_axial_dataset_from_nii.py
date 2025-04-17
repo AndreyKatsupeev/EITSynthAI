@@ -20,13 +20,11 @@ dicom_dataset_dir = '/media/msi/fsi/fsi/datasets_mrt/svalka/COVID19_1110_neponyt
 path_to_save_image_log = f'../../save_test_masks/from_nii/'
 path_to_save_dicom = f'../../save_test_masks/'
 
-
 hu_ranges = {
-    "Воздух": ([-1100, -200], (255, 150, 0)),
+    "Воздух": ([-1100, -200], (255, 255, 0)),
     "Кость": ([70, 800], (255, 255, 255)),
     "Мышца": ([1, 50], (0, 0, 255)),
-    "Жир": ([-150, -1], (0, 255, 255))  # Светло-зелёный
-    # Коричневый
+    "Жир": ([-150, -1], (0, 255, 255))
 }
 
 
@@ -212,7 +210,7 @@ def create_muscles_mask(mask, hu_img, color_output_all, file_name, color):
     return color_output_all
 
 
-def create_lung_mask(mask, hu_img, color_output_all, file_name, color):
+def crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color):
     color_output_lung = np.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=np.uint8)
     kernel = np.ones((3, 3), np.uint8)
     # mask = cv2.dilate(mask, kernel, iterations=1)
@@ -222,12 +220,12 @@ def create_lung_mask(mask, hu_img, color_output_all, file_name, color):
     cv2.drawContours(mask_lung, contours, -1, 255, thickness=cv2.FILLED)
     color_output_lung[np.logical_and(mask_lung, np.all(color_output_lung == (0, 0, 0), axis=2))] = color
     color_output_all[np.logical_and(mask_lung, np.all(color_output_all == (0, 0, 0), axis=2))] = color
-    cv2.imwrite(f'{path_to_save_image_log}{file_name}/6_color_output_lung.jpg', color_output_lung)
+    cv2.imwrite(f'{path_to_save_image_log}{file_name}/6_color_output_adipose.jpg', color_output_lung)
     # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return color_output_all
 
 
-def crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color):
+def create_lung_mask(mask, hu_img, color_output_all, file_name, color):
     color_output_adipose = np.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=np.uint8)
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -239,7 +237,7 @@ def crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color):
         np.logical_and(mask_adipose, np.all(color_output_adipose == (0, 0, 0), axis=2))] = color
     color_output_all[
         np.logical_and(mask_adipose, np.all(color_output_all == (0, 0, 0), axis=2))] = color
-    cv2.imwrite(f'{path_to_save_image_log}{file_name}/7_color_output_adipose.jpg', color_output_adipose)
+    cv2.imwrite(f'{path_to_save_image_log}{file_name}/7_color_output_lung.jpg', color_output_adipose)
     return color_output_all
 
 
@@ -259,20 +257,20 @@ def get_mask_muscles(color_output):
     return mask_muscles, 'muscles'
 
 
-def get_mask_lung(color_output):
+def get_mask_adipose(color_output):
     """"""
     lower_red = np.array([0, 254, 254])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
     upper_red = np.array([0, 255, 255])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
-    mask_lung = cv2.inRange(color_output, lower_red, upper_red)
-    return mask_lung, 'lung'
-
-
-def get_mask_adipose(color_output):
-    """"""
-    lower_red = np.array([254, 149, 0])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
-    upper_red = np.array([255, 150, 0])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
     mask_adipose = cv2.inRange(color_output, lower_red, upper_red)
     return mask_adipose, 'adipose'
+
+
+def get_mask_lung(color_output):
+    """"""
+    lower_red = np.array([254, 254, 0])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
+    upper_red = np.array([255, 255, 0])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
+    mask_lung = cv2.inRange(color_output, lower_red, upper_red)
+    return mask_lung, 'lung'
 
 
 def clear_color_output(only_body_mask, color_output, tolerance=5, min_polygon_size=5):
@@ -533,6 +531,7 @@ if __name__ == "__main__":
             cv2.imwrite(f'{path_to_save_image_log}{file_name}/3_hu_img_blur.jpg', hu_img)
             # Создаём исходное изображение для цветового вывода (в цветном формате)
             color_output_all = np.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=np.uint8)
+
             for label, (hu_range, color) in hu_ranges.items():
                 min_hu, max_hu = hu_range
                 mask = np.logical_and(hu_img >= min_hu, hu_img <= max_hu)
@@ -541,9 +540,9 @@ if __name__ == "__main__":
                     color_output_all = create_bone_mask(mask, hu_img, color_output_all, file_name, color)
                 elif label == "Мышца":
                     color_output_all = create_muscles_mask(mask, hu_img, color_output_all, file_name, color)
-                elif label == "Жир":
-                    color_output_all = create_lung_mask(mask, hu_img, color_output_all, file_name, color)
                 elif label == "Воздух":
+                    color_output_all = create_lung_mask(mask, hu_img, color_output_all, file_name, color)
+                elif label == "Жир":
                     color_output_all = crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color)
                 else:
                     continue
@@ -581,7 +580,6 @@ if __name__ == "__main__":
             mask_bone = get_mask_bone(color_output)
             mask_lung = get_mask_lung(color_output)
             mask_adipose = get_mask_adipose(color_output)
-
             color_output = clear_color_output(only_body_mask, color_output)
             color_output = highlight_small_masks(color_output)
             cv2.imwrite(f'{path_to_save_image_log}{file_name}/9_color_output.jpg', color_output)

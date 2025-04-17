@@ -156,32 +156,32 @@ def apply_hu_to_image(img):
 
 def get_mask_bone(color_output):
     """"""
-    lower_red = numpy.array([254, 254, 254])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
-    upper_red = numpy.array([255, 255, 255])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
+    lower_red = numpy.array([254, 254, 254])  # Нижний диапазон
+    upper_red = numpy.array([255, 255, 255])  # Верхний диапазон
     mask_bone = cv2.inRange(color_output, lower_red, upper_red)
     return mask_bone, 'bone'
 
 
 def get_mask_muscles(color_output):
     """"""
-    lower_red = numpy.array([0, 0, 254])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
-    upper_red = numpy.array([0, 0, 255])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
+    lower_red = numpy.array([0, 0, 254])  # Нижний диапазон
+    upper_red = numpy.array([0, 0, 255])  # Верхний диапазон
     mask_muscles = cv2.inRange(color_output, lower_red, upper_red)
     return mask_muscles, 'muscles'
 
 
 def get_mask_lung(color_output):
     """"""
-    lower_red = numpy.array([0, 254, 254])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
-    upper_red = numpy.array([0, 255, 255])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
+    lower_red = numpy.array([0, 254, 254])  # Нижний диапазон
+    upper_red = numpy.array([0, 255, 255])  # Верхний диапазон
     mask_lung = cv2.inRange(color_output, lower_red, upper_red)
     return mask_lung, 'lung'
 
 
 def get_mask_adipose(color_output):
     """"""
-    lower_red = numpy.array([254, 149, 0])  # Нижний диапазон красного (чуть ниже, чтобы поймать вариации)
-    upper_red = numpy.array([255, 150, 0])  # Верхний диапазон красного (чуть выше, чтобы поймать вариации)
+    lower_red = numpy.array([254, 149, 0])  # Нижний диапазон
+    upper_red = numpy.array([255, 150, 0])  # Верхний диапазон
     mask_adipose = cv2.inRange(color_output, lower_red, upper_red)
     return mask_adipose, 'adipose'
 
@@ -277,7 +277,7 @@ def create_femm_mask_file(mask_list, color_output, img_normalized, final_output,
     """
 
     Args:
-        mask_list:
+        mask_list:[mask_muscles, mask_bone, mask_lung, mask_adipose]
         color_output:
         img_normalized:
         final_output:
@@ -289,7 +289,7 @@ def create_femm_mask_file(mask_list, color_output, img_normalized, final_output,
     """
     img_normalized_clear = img_normalized.copy()
     scale_factors = numpy.array([pixel_spacing[0], pixel_spacing[1]])
-    classes_list = {'bone': '0', 'muscles': '1', 'lung': 2, 'adipose': 3}
+    classes_list = {'bone': '0', 'muscles': '1', 'lung': '2', 'adipose': '3'}
     for msk in mask_list:
         class_msk = classes_list[msk[-1]]
         msk_contours, hierarchy = cv2.findContours(msk[0],
@@ -539,7 +539,7 @@ def create_muscles_mask(mask, hu_img, color_output_all, file_name, color):
     threshold_area = mean_area * (1 - 0.1)
     filtered_contours = [contour for contour, area in zip(contours, areas) if area >= threshold_area]
     mask_muscles = numpy.zeros((hu_img.shape[0], hu_img.shape[1]), dtype=numpy.uint8)
-    cv2.drawContours(mask_muscles, filtered_contours, -1, 255, thickness=cv2.FILLED)
+    cv2.drawContours(mask_muscles, filtered_contours, -1, 255, thickness=-1)
     mask_muscles = mask_filling(mask_muscles)
     color_output_muscles[numpy.logical_and(mask_muscles, numpy.all(color_output_muscles == (0, 0, 0), axis=2))] = color
     color_output_all[numpy.logical_and(mask_muscles, numpy.all(color_output_all == (0, 0, 0), axis=2))] = color
@@ -549,33 +549,33 @@ def create_muscles_mask(mask, hu_img, color_output_all, file_name, color):
     return color_output_all
 
 
-def create_lung_mask(mask, hu_img, color_output_all, file_name, color):
-    color_output_lung = numpy.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=numpy.uint8)
-    kernel = numpy.ones((3, 3), numpy.uint8)
+def crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color):
+    color_output_lung = np.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=np.uint8)
+    kernel = np.ones((3, 3), np.uint8)
     # mask = cv2.dilate(mask, kernel, iterations=1)
     contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     filter_contours_by_area(contours, 5)
-    mask_lung = numpy.zeros((hu_img.shape[0], hu_img.shape[1]), dtype=numpy.uint8)
+    mask_lung = np.zeros((hu_img.shape[0], hu_img.shape[1]), dtype=np.uint8)
     cv2.drawContours(mask_lung, contours, -1, 255, thickness=cv2.FILLED)
-    color_output_lung[numpy.logical_and(mask_lung, numpy.all(color_output_lung == (0, 0, 0), axis=2))] = color
-    color_output_all[numpy.logical_and(mask_lung, numpy.all(color_output_all == (0, 0, 0), axis=2))] = color
+    color_output_lung[np.logical_and(mask_lung, np.all(color_output_lung == (0, 0, 0), axis=2))] = color
+    color_output_all[np.logical_and(mask_lung, np.all(color_output_all == (0, 0, 0), axis=2))] = color
     cv2.imwrite(f'{path_to_save_image_log}{file_name}/6_color_output_lung.jpg', color_output_lung)
     # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return color_output_all
 
 
-def crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color):
-    color_output_adipose = numpy.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=numpy.uint8)
-    kernel = numpy.ones((5, 5), numpy.uint8)
+def create_lung_mask(mask, hu_img, color_output_all, file_name, color):
+    color_output_adipose = np.zeros((hu_img.shape[0], hu_img.shape[1], 3), dtype=np.uint8)
+    kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    mask_adipose = numpy.zeros((hu_img.shape[0], hu_img.shape[1]), dtype=numpy.uint8)
+    mask_adipose = np.zeros((hu_img.shape[0], hu_img.shape[1]), dtype=np.uint8)
     cv2.drawContours(mask_adipose, contours, -1, 255, thickness=cv2.FILLED)
     mask_adipose = mask_filling(mask_adipose)
     color_output_adipose[
-        numpy.logical_and(mask_adipose, numpy.all(color_output_adipose == (0, 0, 0), axis=2))] = color
+        np.logical_and(mask_adipose, np.all(color_output_adipose == (0, 0, 0), axis=2))] = color
     color_output_all[
-        numpy.logical_and(mask_adipose, numpy.all(color_output_all == (0, 0, 0), axis=2))] = color
+        np.logical_and(mask_adipose, np.all(color_output_all == (0, 0, 0), axis=2))] = color
     cv2.imwrite(f'{path_to_save_image_log}{file_name}/7_color_output_adipose.jpg', color_output_adipose)
     return color_output_all
 
@@ -631,6 +631,15 @@ def highlight_small_masks(image, area_threshold=5):
 
     return output
 
+def classic_norm(volume, window_level=40, window_width=400):
+    """"""
+    # Нормализация HU
+    hu_min = window_level - window_width // 2
+    hu_max = window_level + window_width // 2
+    clipped = np.clip(volume, hu_min, hu_max)
+    normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(np.uint8)
+    return normalized
+
 def vignetting_image_normalization(new_image):
     """
     Виньетирование (отсечение крайних значений)
@@ -657,8 +666,7 @@ def create_femm_dataset():
         dir_name = dir_name.replace('.', '_')
         file_name = file_name.replace('.', '_')
         ds = pydicom.dcmread(dcm_file)
-        # for i in ds:
-        #     print(i)
+
         new_image = ds.pixel_array
         new_image = numpy.flipud(new_image)
         rescale_slope = get_rescale_slope(ds)
@@ -683,11 +691,10 @@ def create_femm_dataset():
         cv2.imwrite(f'{path_to_save_image_log}{file_name}/3_hu_img_blur.jpg', hu_img)
 
         hu_ranges = {
-            "Воздух": ([-1100, -200], (255, 150, 0)),
+            "Воздух": ([-1100, -200], (255, 255, 0)),
             "Кость": ([70, 800], (255, 255, 255)),
             "Мышца": ([1, 50], (0, 0, 255)),
-            "Жир": ([-150, -1], (0, 255, 255))  # Светло-зелёный
-            # Коричневый
+            "Жир": ([-150, -1], (0, 255, 255))
         }
 
         # Создаём исходное изображение для цветового вывода (в цветном формате)
@@ -700,19 +707,24 @@ def create_femm_dataset():
                 color_output_all = create_bone_mask(mask, hu_img, color_output_all, file_name, color)
             elif label == "Мышца":
                 color_output_all = create_muscles_mask(mask, hu_img, color_output_all, file_name, color)
-            elif label == "Жир":
-                color_output_all = create_lung_mask(mask, hu_img, color_output_all, file_name, color)
             elif label == "Воздух":
+                color_output_all = create_lung_mask(mask, hu_img, color_output_all, file_name, color)
+            elif label == "Жир":
                 color_output_all = crerate_adipose_mask(mask, hu_img, color_output_all, file_name, color)
             else:
                 continue
 
         cv2.imwrite(f'{path_to_save_image_log}{file_name}/8_color_output_all.jpg', color_output_all)
-
+        try:
+            window_level = int(ds[(0x0028, 0x1050)].value)
+            window_width = int(ds[(0x0028, 0x1051)].value)
+        except:
+            window_level = 40
+            window_width = 400
         if new_image.dtype != numpy.uint8:
             # Нормализация в диапазон 0-255, сохраняя относительную яркость пикселей
             # img_normalized = (new_image - new_image.min()) / (new_image.max() - new_image.min()) * 255.0
-            img_normalized = vignetting_image_normalization(new_image)
+            img_normalized = classic_norm(new_image, window_level, window_width)
             img_normalized = img_normalized.astype(numpy.uint8)
         else:
             img_normalized = new_image
@@ -740,6 +752,7 @@ def create_femm_dataset():
         mask_bone = get_mask_bone(color_output)
         mask_lung = get_mask_lung(color_output)
         mask_adipose = get_mask_adipose(color_output)
+
         color_output = clear_color_output(only_body_mask, color_output)
         color_output = highlight_small_masks(color_output)
         cv2.imwrite(f'{path_to_save_image_log}{file_name}/9_color_output.jpg', color_output)

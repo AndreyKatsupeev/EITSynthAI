@@ -36,7 +36,7 @@ async def upload_file(file: UploadFile = File(...)):
 
         # Замеряем время выполнения функции search_front_slise
         start_time = time.time()  # Засекаем начальное время
-        answer = dicom_seq_to_mask.get_abs_coordinate_slice_from_dicom(zip_buffer)
+        answer = dicom_seq_to_mask.get_coordinate_slice_from_dicom(zip_buffer)
         end_time = time.time()  # Засекаем конечное время
         execution_time = round(end_time - start_time, 2)  # Вычисляем время выполнения
 

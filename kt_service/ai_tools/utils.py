@@ -4,6 +4,7 @@ from collections import defaultdict
 import logging
 import numpy
 import pydicom
+import supervision as sv
 
 from pydicom.filebase import DicomBytesIO
 
@@ -13,19 +14,35 @@ logger = logging.getLogger(__name__)
 
 
 def create_dicom_dict(zip_file):
-    """"""
-    series_dict = defaultdict(list)
-    for file_name in zip_file.namelist():
-        # Чтение файла в бинарном режиме и кодирование в base64
-        file_data = zip_file.read(file_name)
-        # extracted_files[file_name] = base64.b64encode(file_data).decode('utf-8')
-        # Чтение DICOM-файла
-        dicom_data = DicomBytesIO(file_data)
-        dicom_data_slice_with_meta = pydicom.dcmread(dicom_data)
+    """
+    Извлекает DICOM файлы из zip-архива и возвращает срезы самой большой серии.
 
-        series_uid = dicom_data_slice_with_meta.SeriesInstanceUID
-        series_dict[series_uid].append(dicom_data_slice_with_meta)
-    return series_dict, series_uid
+    Args:
+        zip_file: Объект ZipFile с DICOM файлами
+
+    Returns:
+        list: Список DICOM объектов (срезы из серии с максимальным количеством изображений)
+              или пустой список, если не удалось прочитать файлы
+    """
+    series_dict = defaultdict(list)
+
+    # Группируем все серии
+    for file_name in zip_file.namelist():
+        try:
+            with zip_file.open(file_name) as file:
+                dicom_data = DicomBytesIO(file.read())
+                dicom_slice = pydicom.dcmread(dicom_data)
+                series_dict[dicom_slice.SeriesInstanceUID].append(dicom_slice)
+        except Exception as e:
+            print(f"Ошибка при обработке файла {file_name}: {str(e)}")
+            continue
+
+    # Находим самую большую серию
+    if not series_dict:
+        return []
+
+    largest_series = max(series_dict.values(), key=len)
+    return largest_series
 
 
 def convert_to_3d(slices):
@@ -164,15 +181,20 @@ def search_number_axial_slice(detections, image_width=512):
         [False, False, False, ..., False, False, False],
         [False, False, False, ..., False, False, False],
         [False, False, False, ..., False, False, False]],
-
-       [[False, False, False, ..., False, False, False],
-        [False, False, False, ..., False, False, False],
-        [False, False, False, ..., False, False, False],
-        ...,
-        [False, False, False, ..., False, False, False],
-        [False, False, False, ..., False, False, False],
-        [False, False, False, ..., False, False, False]]]), confidence=array([    0.79298,     0.79022,     0.77921,     0.77907,      0.7766,     0.77603,     0.77508,     0.77445,     0.77365,     0.77216,     0.76479,     0.76349,     0.76013,      0.7598,     0.75843,     0.75402,     0.75367,      0.7343,     0.69417], dtype=float32), class_id=array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), tracker_id=None, data={'class_name': array(['rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib'], dtype='<U3')}, metadata={})
-"""
+       [[False, False, False, ..., False, False, False], [False, False, False, ..., False, False, False], [False,
+       False, False, ..., False, False, False], ..., [False, False, False, ..., False, False, False], [False, False,
+       False, ..., False, False, False], [False, False, False, ..., False, False, False]]]),
+       confidence=array([
+       0.79298,     0.79022,     0.77921,     0.77907,      0.7766,     0.77603,     0.77508,     0.77445,
+       0.77365,     0.77216,     0.76479,     0.76349,     0.76013,      0.7598,     0.75843,     0.75402,
+       0.75367,      0.7343,     0.69417], dtype=float32),
+       class_id=array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+       0, 0, 0, 0, 0]),
+       tracker_id=None,
+       data={'class_name': array(['rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib',
+       'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib'],
+       dtype='<U3')}, metadata={})
+    """
     number_axial_slice_list = []
     coordinates = detections.xyxy
     midpoint = image_width / 2
@@ -181,11 +203,260 @@ def search_number_axial_slice(detections, image_width=512):
 
     # Сортировка по оси Y (по второму элементу каждого бокса)
     sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
-    number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1]))/2)
+    number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
     number_axial_slice_list.append(int(sorted_right_side_coordinates[5][1]))
     number_axial_slice_list.append(int(sorted_right_side_coordinates[6][1]))
     number_axial_slice_list.append(number_axial_slice)
     return number_axial_slice_list
+
+
+def classic_norm(volume, window_level=40, window_width=400):
+    """"""
+    # Нормализация HU
+    hu_min = window_level - window_width // 2
+    hu_max = window_level + window_width // 2
+    clipped = numpy.clip(volume, hu_min, hu_max)
+    normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(numpy.uint8)
+    normalized = cv2.rotate(normalized, cv2.ROTATE_180)
+    return normalized
+
+
+def draw_annotate(ribs_detections, front_slice, axial_slice_list_numbers):
+    """"""
+    box_annotator = sv.BoxAnnotator(color=sv.Color.BLUE)
+    annotated_image = front_slice.copy()
+    annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
+    annotated_image = box_annotator.annotate(annotated_image, detections=ribs_detections)
+    annotated_image = cv2.line(annotated_image, (0, axial_slice_list_numbers[-1]), (1000, axial_slice_list_numbers[-1]),
+                               (0, 0, 255), 2)
+    return annotated_image
+
+
+def create_segmentations_masks(axial_segmentations, img_size=512):
+    # Цвета для каждого класса
+    # Цвета для каждого класса
+    clrs = {
+        "adipose": (0, 255, 255),
+        "bone": (255, 255, 255),
+        "muscles": (0, 0, 255),
+        "lung": (255, 255, 0)
+    }
+    # Получаем данные из результатов YOLO
+    mask_coords_list = axial_segmentations.masks.data  # Координаты масок
+    class_ids = axial_segmentations.boxes.cls.cpu().numpy()  # Классы
+    # Создаем словарь для хранения изображений по классам
+    class_images = {
+        "bone": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
+        "muscles": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
+        "lung": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
+        "adipose": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
+    }
+
+    # Обрабатываем каждую маску
+    for i, mask in enumerate(mask_coords_list):
+        import torch
+        # Перемещаем тензор на CPU и преобразуем в NumPy массив
+        if torch.is_tensor(mask):
+            mask = mask.cpu().numpy()
+
+        class_id = class_ids[i]
+
+        # Определяем имя класса
+        if class_id == 0:
+            class_name = "bone"
+        elif class_id == 1:
+            class_name = "muscles"
+        elif class_id == 2:
+            class_name = "lung"
+        elif class_id == 3:
+            class_name = "adipose"
+        else:
+            continue  # пропускаем неизвестные классы
+
+        # Получаем цвет для текущего класса
+        color = clrs[class_name]
+
+        # Создаем маску в формате (H, W, 3)
+        colored_mask = numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
+        # Применяем цвет там, где маска не равна 0
+        colored_mask[mask > 0] = color
+
+        # Добавляем маску к соответствующему изображению класса
+        class_images[class_name] = cv2.add(class_images[class_name], colored_mask)
+
+    return class_images
+
+
+def get_axial_slice_body_mask(ds):
+    """
+    Функция для поиска маски среза тела
+
+    Функция предназначена для отсечения посторонних предметов из среза КТ. Очень часто в срез попадает стол аппарата.
+    Этот метод отсекает все меленькие маски и оставляет самую большую - тело.
+
+    Args:
+        hu_img: изображение 512х512, содержащее HU-коэффициенты
+
+    Returns:
+        only_body_mask: cv2.image
+
+    """
+
+    new_image = ds.pixel_array
+    new_image = numpy.flipud(new_image)
+    rescale_intercept = get_rescale_intercept(ds)
+    rescale_slope = get_rescale_slope(ds)
+    hu_img = numpy.vectorize(get_hu, excluded=['rescale_intercept', 'rescale_slope']) \
+        (new_image, rescale_intercept, rescale_slope).astype(
+        numpy.int16)  # Используем int16, чтобы сохранить диапазон HU
+
+    kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
+    only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
+    only_body_mask = only_body_mask.astype(numpy.uint8)
+
+    only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
+
+    contours, hierarchy = cv2.findContours(only_body_mask,
+                                           cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    max_contour = max(contours, key=cv2.contourArea, default=None)
+    if max_contour is not None:
+        only_body_mask = numpy.zeros_like(only_body_mask)
+    cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)
+    return only_body_mask
+
+
+def get_rescale_intercept(dicom_data):
+    """
+    Параметр Rescale Intercept в DICOM-файле отвечает за смещение, которое применяется к значениям пикселей после
+    их масштабирования с помощью Rescale Slope. Он используется в формуле преобразования сырых значений пикселей
+    (как они хранятся в файле) в реальные физические значения, которые используются
+    для интерпретации медицинских изображений.
+    Args:
+        dicom_data:
+
+    Returns:
+
+    """
+    return int(dicom_data[(0x0028, 0x1052)].value)
+
+
+def get_rescale_slope(dicom_data):
+    """
+    Параметр Rescale Slope в DICOM-файле отвечает за преобразование значений пикселей (вокселей) из их исходного
+    формата (как они хранятся в файле) в реальные физические значения, которые используются для интерпретации данных.
+    Args:
+        dicom_data:
+
+    Returns:
+
+    """
+    rescale_slope = int(dicom_data[(0x0028, 0x1053)].value)
+    return rescale_slope
+
+
+def get_hu(pixel_value, rescale_intercept=0, rescale_slope=1.0):
+    """
+    Функция для вычисления HU из значения пикселей dicom-файла
+
+    Формула взята отсюда https://stackoverflow.com/questions/22991009/how-to-get-hounsfield-units-in-dicom-file-
+    using-fellow-oak-dicom-library-in-c-sh
+
+    Краткое справка приведена в начале скрипта
+
+    Real Value=(Stored Pixel Value×Rescale Slope)+Rescale Intercept
+    Stored Pixel Value — значение пикселя, как оно хранится в DICOM-файле.
+
+    Rescale Slope — коэффициент масштабирования.
+
+    Rescale Intercept — смещение, которое добавляется после умножения.
+
+    Args:
+        pixel_value:
+        rescale_intercept:
+        rescale_slope:
+
+    Returns:
+
+    """
+    hounsfield_units = (rescale_slope * pixel_value) + rescale_intercept
+    return hounsfield_units
+
+
+def create_segmentations_masks_full(segmentation_masks_image, axial_slice_norm_body, ribs_annotated_image):
+    # Параметры для текста
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    font_color = (255, 255, 255)  # белый цвет
+    thickness = 1
+
+    # Создаем список изображений в нужном порядке с их названиями
+    images_with_labels = [
+        (ribs_annotated_image, "ribs_annotated_image"),
+        (axial_slice_norm_body, "axial_slice_norm_body")
+    ]
+
+    # Добавляем сегментационные маски из словаря
+    for key, image in segmentation_masks_image.items():
+        images_with_labels.append((image, key))
+
+    # Список для хранения изображений с текстом
+    labeled_images = []
+
+    # Добавляем текст к каждому изображению
+    for image, label in images_with_labels:
+        # Создаем копию изображения, чтобы не изменять оригинал
+        labeled_img = image.copy()
+
+        # Получаем размеры изображения
+        height, width = labeled_img.shape[:2]
+
+        # Вычисляем позицию текста (центрируем)
+        text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
+        text_x = (width - text_size[0]) // 2
+        text_y = (height + text_size[1]) // 2
+
+        # Добавляем текст на изображение
+        cv2.putText(labeled_img, label, (text_x, text_y), font,
+                    font_scale, font_color, thickness, cv2.LINE_AA)
+
+        labeled_images.append(labeled_img)
+
+    # Определяем размеры сетки
+    num_images = len(labeled_images)
+    if num_images <= 2:
+        rows, cols = 1, num_images
+    elif num_images <= 4:
+        rows, cols = 2, 2
+    elif num_images <= 6:
+        rows, cols = 2, 3
+    else:
+        # Для большого количества изображений можно добавить больше вариантов
+        rows, cols = 2, (num_images + 1) // 2
+
+    # Получаем размеры первого изображения (предполагаем, что все одинакового размера)
+    img_height, img_width = labeled_images[0].shape[:2]
+
+    # Создаем пустое изображение для результата
+    result = numpy.zeros((img_height * rows, img_width * cols, 3), dtype=numpy.uint8)
+
+    # Заполняем сетку изображениями
+    for i in range(rows):
+        for j in range(cols):
+            idx = i * cols + j
+            if idx < len(labeled_images):
+                result[i * img_height:(i + 1) * img_height,
+                j * img_width:(j + 1) * img_width] = labeled_images[idx]
+
+    # Показываем изображение
+    cv2.namedWindow('Segmentation Masks', cv2.WINDOW_NORMAL)
+    cv2.imshow("Segmentation Masks", result)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+def create_segmentation_results_cnt(axial_detections):
+    """"""
+    pass
+
 
 def create_answer():
     pass

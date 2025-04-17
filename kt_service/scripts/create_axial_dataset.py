@@ -117,7 +117,7 @@ if __name__ == "__main__":
             # Нормализуем пиксели в диапазоне 0....255
             front_slice_norm = cv2.normalize(front_slice_mean, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
             detections = dicom_seq_to_mask.ribs_predict(front_slice_norm)
-            number_slice_eit_list = dicom_seq_to_mask.search_axial_slice(detections, i_slices)
+            number_slice_eit_list, number_slice_eit_list = dicom_seq_to_mask.search_axial_slice(detections, i_slices)
             # Сохранение DICOM-файла
             cnt = 0
             for axial_slice_image in number_slice_eit_list:
