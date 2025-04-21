@@ -11,6 +11,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 from fastapi.responses import JSONResponse
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,34 +20,54 @@ logger = logging.getLogger(__name__)
 def create_dicom_dict(zip_file):
     """
     Извлекает DICOM файлы из zip-архива и возвращает срезы самой большой серии.
+    Также проверяет наличие файла custom_input.txt и возвращает его содержимое.
 
     Args:
         zip_file: Объект ZipFile с DICOM файлами
 
     Returns:
-        list: Список DICOM объектов (срезы из серии с максимальным количеством изображений)
-              или пустой список, если не удалось прочитать файлы
+        tuple: (list_of_dicom_slices, custom_input)
+               где list_of_dicom_slices - список DICOM объектов,
+               custom_input - содержимое файла custom_input.txt или None
     """
     series_dict = defaultdict(list)
+    custom_input = None
 
-    # Группируем все серии
+    # Проверяем наличие custom_input.txt
+    if 'custom_input.txt' in zip_file.namelist():
+        with zip_file.open('custom_input.txt') as f:
+            custom_input = f.read().decode('utf-8').strip()
+
+    # Группируем все серии DICOM
     for file_name in zip_file.namelist():
-        try:
-            with zip_file.open(file_name) as file:
-                dicom_data = DicomBytesIO(file.read())
-                dicom_slice = pydicom.dcmread(dicom_data)
-                series_dict[dicom_slice.SeriesInstanceUID].append(dicom_slice)
-        except Exception as e:
-            print(f"Ошибка при обработке файла {file_name}: {str(e)}")
-            continue
+        if file_name.lower().endswith('.dcm') or not file_name.lower().endswith('.txt'):
+            try:
+                with zip_file.open(file_name) as file:
+                    dicom_data = DicomBytesIO(file.read())
+                    dicom_slice = pydicom.dcmread(dicom_data)
+                    series_dict[dicom_slice.SeriesInstanceUID].append(dicom_slice)
+            except Exception as e:
+                print(f"Ошибка при обработке файла {file_name}: {str(e)}")
+                continue
 
     # Находим самую большую серию
     if not series_dict:
-        return []
+        return [], custom_input
+    if custom_input is None:
+        custom_input = 0
+    largest_series = max(series_dict.values(), key=len)
+    return largest_series, int(custom_input)
+
+
+def create_image_dict(zip_file):
+    """
+
+    """
+    series_dict = defaultdict(list)
+    custom_input = None
 
     largest_series = max(series_dict.values(), key=len)
     return largest_series
-
 
 def convert_to_3d(slices):
     """
@@ -122,7 +143,7 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
     return sagittal_view
 
 
-def search_number_axial_slice(detections, image_width=512):
+def search_number_axial_slice(detections, custom_number_slise=0, image_width=512):
     """
 
     Detections(xyxy=array([[     100.45,      109.37,      116.43,      129.18],
@@ -201,9 +222,11 @@ def search_number_axial_slice(detections, image_width=512):
     number_axial_slice_list = []
     coordinates = detections.xyxy
     midpoint = image_width / 2
+    print(midpoint)
     # Фильтрация координат, оставляем только те, что правее середины
     right_side_coordinates = [box for box in coordinates if box[0] > midpoint]
-
+    print(right_side_coordinates)
+    print(len(right_side_coordinates))
     # Сортировка по оси Y (по второму элементу каждого бокса)
     sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
     number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
@@ -231,7 +254,7 @@ def draw_annotate(ribs_detections, front_slice, axial_slice_list_numbers):
     annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
     annotated_image = box_annotator.annotate(annotated_image, detections=ribs_detections)
     annotated_image = cv2.line(annotated_image, (0, axial_slice_list_numbers[-1]), (1000, axial_slice_list_numbers[-1]),
-                               (0, 0, 255), 2)
+                               (0, 0, 255), 1)
     return annotated_image
 
 
@@ -553,33 +576,63 @@ def overlay_masks_with_transparency(base_image, color_mask, alpha=0.8):
     return overlay
 
 
-def create_segmentations_masks_full(segmentation_masks_image, only_body_mask, ribs_annotated_image,
-                                    axial_slice_norm_body):
-    # 1. Создаем цветную маску и ее варианты
-    color_output = overlay_segmentation_masks(segmentation_masks_image)
-    color_output = clear_color_output(only_body_mask, color_output)
-    color_output = highlight_small_masks(color_output)
-    axial_slice_norm_body_with_color = overlay_masks_with_transparency(axial_slice_norm_body, color_output)
+def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mask=None, ribs_annotated_image=None,
+                                    axial_slice_norm_body=None):
+    """
+    Создает комбинированное изображение из доступных масок и аннотаций.
+    Если какой-то из аргументов пустой (None или пустой массив), он пропускается.
 
-    # 2. Подготавливаем все изображения для объединения
-    images_to_combine = [
-        ("1. Ribs Annotated", ribs_annotated_image),
-        ("2. Axial Slice", axial_slice_norm_body),
-        ("3. Color Masks", color_output),
-        ("4. Combined View", axial_slice_norm_body_with_color)
-    ]
+    Args:
+        segmentation_masks_image: dict с сегментационными масками
+        only_body_mask: маска тела
+        ribs_annotated_image: изображение с аннотированными ребрами
+        axial_slice_norm_body: аксиальный срез с нормализованным телом
 
-    # Добавляем отдельные маски из словаря
-    for idx, (key, image) in enumerate(segmentation_masks_image.items(), start=5):
-        images_to_combine.append((f"{idx}. {key}", image))
+    Returns:
+        Комбинированное изображение с доступными компонентами
+    """
+    images_to_combine = []
 
-    # 3. Приводим все изображения к одному размеру (берем максимальные размеры)
+    # 1. Обрабатываем ribs_annotated_image, если он есть
+    if ribs_annotated_image is not None and numpy.any(ribs_annotated_image):
+        images_to_combine.append(("1. Ribs Annotated", ribs_annotated_image))
+
+    # 2. Обрабатываем axial_slice_norm_body, если он есть
+    if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
+        images_to_combine.append(("2. Axial Slice", axial_slice_norm_body))
+
+    # 3. Обрабатываем segmentation_masks_image и создаем цветные маски, если они есть
+    if segmentation_masks_image is not None and len(segmentation_masks_image) > 0:
+        # Создаем цветную маску и ее варианты
+        color_output = overlay_segmentation_masks(segmentation_masks_image)
+
+        if only_body_mask is not None and numpy.any(only_body_mask):
+            color_output = clear_color_output(only_body_mask, color_output)
+
+        color_output = highlight_small_masks(color_output)
+
+        if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
+            axial_slice_norm_body_with_color = overlay_masks_with_transparency(axial_slice_norm_body, color_output)
+            images_to_combine.append(("3. Combined View", axial_slice_norm_body_with_color))
+
+        images_to_combine.append(("4. Color Masks", color_output))
+
+        # Добавляем отдельные маски из словаря
+        for idx, (key, image) in enumerate(segmentation_masks_image.items(), start=5):
+            if image is not None and numpy.any(image):
+                images_to_combine.append((f"{idx}. {key}", image))
+
+    # Если нет изображений для объединения, возвращаем пустое изображение
+    if not images_to_combine:
+        return numpy.zeros((100, 100, 3), dtype=numpy.uint8)
+
+    # 4. Приводим все изображения к одному размеру (берем максимальные размеры)
     max_height = max(img.shape[0] for _, img in images_to_combine)
     max_width = max(img.shape[1] for _, img in images_to_combine)
 
-    # 4. Добавляем подписи и выравниваем размеры
+    # 5. Добавляем подписи и выравниваем размеры
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.5
+    font_scale = 0.8
     font_color = (255, 255, 255)
     thickness = 1
 
@@ -609,15 +662,15 @@ def create_segmentations_masks_full(segmentation_masks_image, only_body_mask, ri
 
         labeled_images.append(labeled)
 
-    # 5. Определяем размеры сетки
+    # 6. Определяем размеры сетки
     num_images = len(labeled_images)
-    cols = 3  # Фиксированное количество колонок
+    cols = min(3, num_images)  # Не более 3 колонок, но меньше если изображений мало
     rows = (num_images + cols - 1) // cols  # Вычисляем нужное количество строк
 
-    # 6. Создаем результирующее изображение
+    # 7. Создаем результирующее изображение
     result = numpy.zeros((max_height * rows, max_width * cols, 3), dtype=numpy.uint8)
 
-    # 7. Заполняем сетку изображениями
+    # 8. Заполняем сетку изображениями
     for i in range(rows):
         for j in range(cols):
             idx = i * cols + j
@@ -627,6 +680,7 @@ def create_segmentations_masks_full(segmentation_masks_image, only_body_mask, ri
                 x_start = j * max_width
                 x_end = (j + 1) * max_width
                 result[y_start:y_end, x_start:x_end] = labeled_images[idx]
+
     return result
 
 
@@ -636,7 +690,7 @@ def create_segmentation_results_cnt(axial_detections):
     return text
 
 
-def create_answer(segmentation_masks_full_image, segmentation_results_cnt):
+def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time):
     """
     Формирует ответ для отправки клиенту, содержащий изображение и текстовые данные
 
@@ -663,9 +717,9 @@ def create_answer(segmentation_masks_full_image, segmentation_results_cnt):
     answer = {
         "image": img_base64,
         "text_data": segmentation_results_cnt,
+        "segmentation_time": segmentation_time,
         "status": "success",
         "message": "Processing completed successfully"
     }
 
     return JSONResponse(content=answer)
-

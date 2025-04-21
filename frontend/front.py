@@ -2,8 +2,11 @@ import requests
 import streamlit as st
 from PIL import Image
 import io
-from frontend_utils import dicom_sequence_to_zip
+from frontend_utils import dicom_sequence_to_zip, dicom_sequence_custom_to_zip, dicom_frame_to_zip, \
+    image_axial_slice_to_zip, nii_sequence_to_zip
 import base64
+import time
+
 # Настройка страницы
 st.set_page_config(page_title="", layout="wide")
 st.markdown("<h2 style='text-align: center; color: white;'>Сервис формирования датасета для ЭИТ</h2>", unsafe_allow_html=True)
@@ -50,19 +53,21 @@ if __name__ == "__main__":
         # Обработка загруженного файла
         if button_flag and uploaded_file is not None:
             st.write("Файл успешно загружен!")
-
             with st.spinner('Обработка DICOM файлов...'):
                 if generation_mode == "dicom_sequences_auto":
                     try:
                         dicom_zip = dicom_sequence_to_zip(uploaded_file)
                         files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
+                        t_start = time.time()
                         response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
+                        t_finish = time.time()-t_start
 
                         if response.status_code == 200:
                             result = response.json()
 
                             # Отображаем время выполнения
-                            st.success(f"Обработка завершена за {result.get('execution_time', 'N/A')} секунд")
+                            st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
+                            st.success(f"Время сегментации {result['segmentation_time'] } c")
 
                             # Отображаем текстовые данные
                             if 'text_data' in result:
@@ -74,7 +79,6 @@ if __name__ == "__main__":
                                 img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                                 img = Image.open(io.BytesIO(img_bytes))
                                 st.image(img, caption="Результат сегментации", use_container_width=True)
-
                         else:
                             st.error(f"Ошибка обработки: {response.text}")
 
@@ -83,13 +87,133 @@ if __name__ == "__main__":
                     except Exception as e:
                         st.error(f"Неожиданная ошибка: {str(e)}")
                 elif generation_mode == "dicom_sequences_custom":
-                    st.write('run dicom_sequences_custom')
+                    try:
+                        dicom_zip = dicom_sequence_custom_to_zip(uploaded_file, custom_input)
+                        files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
+                        t_start = time.time()
+                        response = requests.post("http://localhost:5001/uploadDicomSequenceCustom/", files=files)
+                        t_finish = time.time() - t_start
+
+                        if response.status_code == 200:
+                            result = response.json()
+
+                            # Отображаем время выполнения
+                            st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
+                            st.success(f"Время сегментации {result['segmentation_time']} c")
+
+                            # Отображаем текстовые данные
+                            if 'text_data' in result:
+                                st.subheader("Результаты сегментации:")
+                                st.text(result['text_data'])
+
+                            # Отображаем изображение
+                            if 'image' in result:
+                                img_bytes = base64.b64decode(result['image'].encode('utf-8'))
+                                img = Image.open(io.BytesIO(img_bytes))
+                                st.image(img, caption="Результат сегментации", use_container_width=True)
+                        else:
+                            st.error(f"Ошибка обработки: {response.text}")
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Ошибка соединения с сервером: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Неожиданная ошибка: {str(e)}")
                 elif generation_mode == "dicom_frame":
-                    st.write('run dicom_frame')
+                    try:
+                        dicom_zip = dicom_frame_to_zip(uploaded_file)
+                        files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
+                        t_start = time.time()
+                        response = requests.post("http://localhost:5001/uploadDicomFrame/", files=files)
+                        t_finish = time.time() - t_start
+
+                        if response.status_code == 200:
+                            result = response.json()
+
+                            # Отображаем время выполнения
+                            st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
+                            st.success(f"Время сегментации {result['segmentation_time']} c")
+
+                            # Отображаем текстовые данные
+                            if 'text_data' in result:
+                                st.subheader("Результаты сегментации:")
+                                st.text(result['text_data'])
+
+                            # Отображаем изображение
+                            if 'image' in result:
+                                img_bytes = base64.b64decode(result['image'].encode('utf-8'))
+                                img = Image.open(io.BytesIO(img_bytes))
+                                st.image(img, caption="Результат сегментации", use_container_width=True)
+                        else:
+                            st.error(f"Ошибка обработки: {response.text}")
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Ошибка соединения с сервером: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Неожиданная ошибка: {str(e)}")
                 elif generation_mode == "jpg_png":
-                    st.write('run jpg_png')
+                    try:
+                        image_axial_slice_zip = image_axial_slice_to_zip(uploaded_file)
+                        files = {'file': ('dicom_files.zip', image_axial_slice_zip.getvalue(), 'application/zip')}
+                        t_start = time.time()
+                        response = requests.post("http://localhost:5001/uploadImageAxialSlice/", files=files)
+                        t_finish = time.time() - t_start
+
+                        if response.status_code == 200:
+                            result = response.json()
+
+                            # Отображаем время выполнения
+                            st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
+                            st.success(f"Время сегментации {result['segmentation_time']} c")
+
+                            # Отображаем текстовые данные
+                            if 'text_data' in result:
+                                st.subheader("Результаты сегментации:")
+                                st.text(result['text_data'])
+
+                            # Отображаем изображение
+                            if 'image' in result:
+                                img_bytes = base64.b64decode(result['image'].encode('utf-8'))
+                                img = Image.open(io.BytesIO(img_bytes))
+                                st.image(img, caption="Результат сегментации", use_container_width=True)
+                        else:
+                            st.error(f"Ошибка обработки: {response.text}")
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Ошибка соединения с сервером: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Неожиданная ошибка: {str(e)}")
                 elif generation_mode == "nii":
-                    st.write('run nii')
+                    try:
+                        nii_zip = nii_sequence_to_zip(uploaded_file)
+                        files = {'file': ('dicom_files.zip', nii_zip.getvalue(), 'application/zip')}
+                        t_start = time.time()
+                        response = requests.post("http://localhost:5001/uploadNII/", files=files)
+                        t_finish = time.time() - t_start
+
+                        if response.status_code == 200:
+                            result = response.json()
+
+                            # Отображаем время выполнения
+                            st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
+                            st.success(f"Время сегментации {result['segmentation_time']} c")
+
+                            # Отображаем текстовые данные
+                            if 'text_data' in result:
+                                st.subheader("Результаты сегментации:")
+                                st.text(result['text_data'])
+
+                            # Отображаем изображение
+                            if 'image' in result:
+                                img_bytes = base64.b64decode(result['image'].encode('utf-8'))
+                                img = Image.open(io.BytesIO(img_bytes))
+                                st.image(img, caption="Результат сегментации", use_container_width=True)
+                        else:
+                            st.error(f"Ошибка обработки: {response.text}")
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Ошибка соединения с сервером: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Неожиданная ошибка: {str(e)}")
                 else:
                     print('error')
 
