@@ -10,7 +10,7 @@ import base64
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response
 from io import BytesIO
 
-from .ai_tools.ai_tools import DICOMSequencesToMask, DICOMSequencesToMaskCustom, DICOMToMask, ImageToMask
+from .ai_tools.ai_tools import DICOMSequencesToMask, DICOMSequencesToMaskCustom, DICOMToMask, ImageToMask, NIIToMask
 import sys
 from pathlib import Path
 
@@ -27,6 +27,7 @@ dicom_seq_to_mask = DICOMSequencesToMask()
 dicom_seq_to_mask_custom = DICOMSequencesToMaskCustom()
 dicom_seq_to_mask_frame = DICOMToMask()
 image_axial_slice_to_mask = ImageToMask()
+nii_seq_to_mask = NIIToMask()
 
 
 
@@ -128,27 +129,9 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         zip_buffer = BytesIO(contents)
-
-        # Открываем ZIP-архив
-        with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-            # Получаем список файлов в архиве
-            file_list = zip_file.namelist()
-
-            # Проверяем, что в архиве есть файлы
-            if not file_list:
-                raise HTTPException(status_code=400, detail="ZIP-архив пуст")
-
-            # Берем первый файл (или обрабатываем все, если нужно)
-            first_file = file_list[0]
-
-            # Извлекаем файл из архива
-            with zip_file.open(first_file) as image_file:
-                # Читаем изображение с помощью PIL
-                image = Image.open(image_file)
-                image = numpy.array(image)
-
-                answer = image_axial_slice_to_mask.get_coordinate_slice_from_image(image)
-
+        #  делаем запрос на бек
+        answer = nii_seq_to_mask.get_coordinate_slice_from_nii(zip_buffer)
+        # Возвращаем JSON с изображением и временем выполнения
         return answer
 
     except zipfile.BadZipFile:

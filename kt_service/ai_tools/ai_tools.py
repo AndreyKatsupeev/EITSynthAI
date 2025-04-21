@@ -8,7 +8,7 @@ import sys
 from ultralytics import YOLO
 from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, \
     create_answer, classic_norm, draw_annotate, create_segmentations_masks, create_segmentation_results_cnt, \
-    get_axial_slice_body_mask, create_segmentations_masks_full, create_image_dict
+    get_axial_slice_body_mask, create_segmentations_masks_full, get_axial_slice_body_mask_nii, get_nii_mean_slice
 
 from pathlib import Path
 
@@ -168,7 +168,6 @@ class ImageToMask(DICOMSequencesToMask):
         """"""
         only_body_mask = None
         ribs_annotated_image = None
-        axial_slice_norm_body
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
@@ -178,25 +177,35 @@ class ImageToMask(DICOMSequencesToMask):
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
         return answer
 
-#
-#
-# class NIIToMask():
-#     pass
+
+class NIIToMask(DICOMSequencesToMask):
+
+    def get_coordinate_slice_from_nii(self, zip_buffer, answer=None):
+        """У nii файлов меньше срезов пачке, поэтому фронтальный срез не получается хорошего качества. При обработке nii
+        просто берется средний срез в пачке
+        """
+        ribs_annotated_image = None
+        with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
+            nii_mean_slice = get_nii_mean_slice(zip_file)
+            axial_slice_norm = classic_norm(nii_mean_slice)
+            only_body_mask = get_axial_slice_body_mask_nii(nii_mean_slice)
+            only_body_hu_img = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
+                                               mask=only_body_mask)  # Выделяем тело в изображении HU
+
+            cv2.namedWindow('only_body_mask', cv2.WINDOW_NORMAL)
+            cv2.imshow("only_body_mask", only_body_mask)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            axial_segmentations, segmentation_time = self._axial_slice_predict(only_body_hu_img)
+            segmentation_masks_image = create_segmentations_masks(axial_segmentations)
+            segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
+                                                                            ribs_annotated_image, only_body_hu_img)
+
+            segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
+            answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+            return answer
 
 
-# class SearchSlice(abc.ABC):
-#     def __init__(self, ribs_model_path=None):
-#         if ribs_model_path:
-#             self.ribs_model_path = ribs_model_path
-#         else:
-#             self.ribs_model_path = config.ribs_model_path
-#         self.model = self.__load_model(self.ribs_model_path)
-#
-#     def __load_model(self, ribs_model_path):
-#         return model.load(ribs_model_path)
-#
-#     def __get_slice(self, images):
-#         return slise
-#
-#     def __ribs_predict(self, front_slice):
-#         pass
+
+
+

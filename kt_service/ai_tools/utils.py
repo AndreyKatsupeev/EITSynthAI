@@ -8,9 +8,12 @@ import supervision as sv
 from scipy.ndimage import label
 from pydicom.filebase import DicomBytesIO
 import base64
-from io import BytesIO
 from PIL import Image
 from fastapi.responses import JSONResponse
+import nibabel as nib
+import tempfile
+import os
+from io import BytesIO
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +71,7 @@ def create_image_dict(zip_file):
 
     largest_series = max(series_dict.values(), key=len)
     return largest_series
+
 
 def convert_to_3d(slices):
     """
@@ -243,7 +247,6 @@ def classic_norm(volume, window_level=40, window_width=400):
     hu_max = window_level + window_width // 2
     clipped = numpy.clip(volume, hu_min, hu_max)
     normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(numpy.uint8)
-    normalized = cv2.rotate(normalized, cv2.ROTATE_180)
     return normalized
 
 
@@ -375,6 +378,35 @@ def get_axial_slice_body_mask(ds):
         (new_image, rescale_intercept, rescale_slope).astype(
         numpy.int16)  # Используем int16, чтобы сохранить диапазон HU
 
+    kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
+    only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
+    only_body_mask = only_body_mask.astype(numpy.uint8)
+
+    only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
+
+    contours, hierarchy = cv2.findContours(only_body_mask,
+                                           cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    max_contour = max(contours, key=cv2.contourArea, default=None)
+    if max_contour is not None:
+        only_body_mask = numpy.zeros_like(only_body_mask)
+    cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)
+    return only_body_mask
+
+
+def get_axial_slice_body_mask_nii(hu_img):
+    """
+    Функция для поиска маски среза тела
+
+    Функция предназначена для отсечения посторонних предметов из среза КТ. Очень часто в срез попадает стол аппарата.
+    Этот метод отсекает все меленькие маски и оставляет самую большую - тело.
+
+    Args:
+        hu_img: изображение 512х512, содержащее HU-коэффициенты
+
+    Returns:
+        only_body_mask: cv2.image
+
+    """
     kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
     only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
     only_body_mask = only_body_mask.astype(numpy.uint8)
@@ -723,3 +755,53 @@ def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segme
     }
 
     return JSONResponse(content=answer)
+
+
+def get_nii_mean_slice(zip_file):
+    """
+    Args:
+        zip_file: ZIP-архив с NIfTI-файлами (.nii.gz)
+    Returns:
+        Средний срез (после поворота на 90°)
+    """
+    # Проверяем наличие custom_input.txt
+    if 'custom_input.txt' in zip_file.namelist():
+        with zip_file.open('custom_input.txt') as f:
+            custom_input = f.read().decode('utf-8').strip()
+
+    data = None
+
+    # Ищем .nii.gz файлы (игнорируем .tar.gz)
+    for file_name in zip_file.namelist():
+        if file_name.lower().endswith('.nii.gz') and not file_name.lower().endswith('.tar.gz'):
+            try:
+                with zip_file.open(file_name) as file:
+                    file_content = file.read()  # Читаем файл в память
+
+                    # Создаем временный файл
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.nii.gz') as tmp_file:
+                        tmp_file.write(file_content)
+                        tmp_file_path = tmp_file.name
+
+                    # Загружаем через nibabel
+                    nii_data = nib.load(tmp_file_path)
+                    data = nii_data.get_fdata().astype(numpy.int16)
+
+                    # Удаляем временный файл
+                    os.unlink(tmp_file_path)
+                    hu_data = data * 1.0 - 0  # slope=1, intercept=-1024
+                    slice_mean = int(hu_data.shape[-1] / 2)
+                    slise_save = hu_data[:, :, slice_mean]
+                    slise_save = cv2.rotate(slise_save, cv2.ROTATE_90_CLOCKWISE)
+
+                    break  # Обрабатываем первый подходящий файл
+            except Exception as e:
+                print(f"Ошибка при обработке файла {file_name}: {str(e)}")
+                if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+                    os.unlink(tmp_file_path)
+                continue
+
+    if data is None:
+        raise ValueError("Не удалось загрузить NIfTI файл из архива")
+
+    return slise_save
