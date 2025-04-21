@@ -1,4 +1,4 @@
-import base64
+import torch
 import cv2
 from collections import defaultdict
 import logging
@@ -298,9 +298,6 @@ def overlay_segmentation_masks(segmentation_dict):
 
 
 def create_segmentations_masks(axial_segmentations, img_size=512):
-    # Цвета для каждого класса
-    # Цвета для каждого класса
-
     clrs = {
         "adipose": (0, 255, 255),
         "bone": (255, 255, 255),
@@ -320,7 +317,6 @@ def create_segmentations_masks(axial_segmentations, img_size=512):
 
     # Обрабатываем каждую маску
     for i, mask in enumerate(mask_coords_list):
-        import torch
         # Перемещаем тензор на CPU и преобразуем в NumPy массив
         if torch.is_tensor(mask):
             mask = mask.cpu().numpy()
@@ -534,47 +530,86 @@ def clear_color_output(only_body_mask, color_output, tolerance=5, min_polygon_si
 
 
 def highlight_small_masks(image, area_threshold=5):
+    """
+    Выделяет и перекрашивает маленькие маски (области) на изображении, заменяя их цветом соседних пикселей.
+
+    Функция ищет маски определенных цветов (кости, мышцы, жир, воздух) на изображении и для тех масок,
+    размер которых меньше заданного порога, заменяет их цвет на наиболее распространенный цвет соседних пикселей.
+
+    Параметры:
+    ----------
+    image : numpy.ndarray
+        Входное изображение в формате BGR (используется в OpenCV).
+    area_threshold : int, optional
+        Максимальный размер маски (в пикселях), которая считается маленькой и подлежит обработке.
+        По умолчанию 5.
+
+    Возвращает:
+    -----------
+    numpy.ndarray
+        Изображение того же размера, что и входное, с перекрашенными маленькими масками.
+
+    """
+
+    # Цвета масок для разных типов тканей в формате BGR
     mask_colors = {
-        "bone": (255, 255, 255),
-        "muscle": (0, 0, 255),
-        "fat": (0, 255, 255),
-        "air": (0, 150, 255),
+        "bone": (255, 255, 255),  # Белый - кости
+        "muscle": (0, 0, 255),  # Красный - мышцы
+        "fat": (0, 255, 255),  # Желтый - жир
+        "air": (0, 150, 255),  # Оранжевый - воздух
     }
 
+    # Создаем копию изображения для модификации
     output = image.copy()
 
+    # Обрабатываем каждый тип ткани отдельно
     for tissue, target_color in mask_colors.items():
+        # Определяем диапазон цветов для текущего типа ткани (±10 от целевого цвета)
         lower = numpy.array(target_color, dtype=numpy.int16) - 10
         upper = numpy.array(target_color, dtype=numpy.int16) + 10
+
+        # Создаем бинарную маску для текущего цвета ткани
         mask = cv2.inRange(image, lower, upper)
 
+        # Находим контуры всех масок текущего цвета
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # Обрабатываем каждый контур отдельно
         for cnt in contours:
+            # Если размер контура меньше порогового значения
             if len(cnt) <= area_threshold:
+                # Создаем маску только для текущего контура
                 contour_mask = numpy.zeros(image.shape[:2], dtype=numpy.uint8)
                 cv2.drawContours(contour_mask, [cnt], -1, 255, cv2.FILLED)
 
+                # Расширяем маску контура на 1 пиксель, чтобы получить соседние пиксели
                 dilated = cv2.dilate(contour_mask, numpy.ones((3, 3), numpy.uint8), iterations=1)
                 neighbors_mask = dilated - contour_mask
+
+                # Получаем цвета соседних пикселей
                 neighbor_colors = output[neighbors_mask == 255]
 
                 if len(neighbor_colors) > 0:
+                    # Фильтруем цвета: убираем целевой цвет и черный (фон)
                     neighbor_colors = [tuple(c) for c in neighbor_colors
                                        if not numpy.array_equal(c, target_color)
                                        and not numpy.array_equal(c, (0, 0, 0))]
 
                     if neighbor_colors:
-                        # Use the most common neighbor color (as a tuple)
+                        # Выбираем наиболее часто встречающийся цвет соседей
                         from collections import Counter
                         fill_color = Counter(neighbor_colors).most_common(1)[0][0]
                     else:
-                        fill_color = target_color  # Fallback to original color
+                        # Если подходящих соседей нет, оставляем исходный цвет
+                        fill_color = target_color
                 else:
-                    fill_color = target_color  # No neighbors: keep original
+                    # Если совсем нет соседей, оставляем исходный цвет
+                    fill_color = target_color
 
-                # Ensure fill_color is a tuple of integers
+                # Преобразуем цвет в кортеж целых чисел (на случай, если был numpy array)
                 fill_color = tuple(map(int, fill_color))
+
+                # Закрашиваем маленькую маску выбранным цветом
                 cv2.drawContours(output, [cnt], -1, fill_color, thickness=cv2.FILLED)
 
     return output
@@ -616,7 +651,7 @@ def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mas
         segmentation_masks_image: dict с сегментационными масками
         only_body_mask: маска тела
         ribs_annotated_image: изображение с аннотированными ребрами
-        axial_slice_norm_body: аксиальный срез с нормализованным телом
+        axial_slice_norm_body: аксиальный срез с нормализованным цветом
 
     Returns:
         Комбинированное изображение с доступными компонентами
@@ -711,7 +746,7 @@ def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mas
                 x_end = (j + 1) * max_width
                 result[y_start:y_end, x_start:x_end] = labeled_images[idx]
 
-    return result
+    return result, color_output
 
 
 def create_segmentation_results_cnt(axial_detections):
@@ -803,3 +838,67 @@ def get_nii_mean_slice(zip_file):
         raise ValueError("Не удалось загрузить NIfTI файл из архива")
 
     return slise_save
+
+
+def get_pixel_spacing(dicom_data):
+    """
+    Функция получения коэффициентов для преобразования значений в пикселях в миллиметры. Используется стандартный тег
+    "Pixel Spacing" (0028, 0030)
+
+    Args:
+        dicom_data: прочитанный dicom
+
+    Returns:
+        pixel_spacing: (0028, 0030) Pixel Spacing DS: [0.753906, 0.753906] - можно обращаться через индекс
+
+    """
+    pixel_spacing = dicom_data[(0x0028, 0x0030)]
+    return pixel_spacing
+
+
+def create_list_crd_from_color_output(color_output, pixel_spacing):
+    # Цвета масок и соответствующие классы
+    color_class_map = {
+        (0, 255, 255): "3",
+        (255, 255, 255): "0",
+        (0, 0, 255): "1",
+        (255, 255, 0): "2"
+    }
+
+    result = []
+
+    # Конвертируем в BGR, если изображение в RGB
+    img = cv2.cvtColor(color_output, cv2.COLOR_RGB2BGR)
+
+    for color, class_name in color_class_map.items():
+        # Создаем маску для текущего цвета (в порядке BGR для OpenCV)
+        bgr_color = color[::-1]  # конвертируем RGB в BGR
+        lower = numpy.array(bgr_color, dtype=numpy.uint8)
+        upper = numpy.array(bgr_color, dtype=numpy.uint8)
+        mask = cv2.inRange(img, lower, upper)
+
+        # Находим контуры
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            # Упрощаем контур (уменьшаем количество точек)
+            epsilon = 0.005 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            # Проверяем замкнутость контура
+            if len(approx) > 2:
+                first_point = approx[0][0]
+                last_point = approx[-1][0]
+
+                # Если контур не замкнут, добавляем первую точку в конец
+                if not numpy.array_equal(first_point, last_point):
+                    approx = numpy.append(approx, [[first_point]], axis=0)
+
+            # Формируем строку с координатами полигона
+            points_str = " ".join([f"{p[0][0]} {p[0][1]}" for p in approx])
+            polygon_str = f"{class_name} {points_str}"
+            result.append(polygon_str)
+    result.insert(0, str(pixel_spacing[1]))
+    result.insert(0, str(pixel_spacing[0]))
+
+    return result

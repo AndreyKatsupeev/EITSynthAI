@@ -1,6 +1,6 @@
 import abc
 import time
-
+import requests
 import cv2
 import logging
 import supervision as sv
@@ -8,7 +8,8 @@ import sys
 from ultralytics import YOLO
 from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, \
     create_answer, classic_norm, draw_annotate, create_segmentations_masks, create_segmentation_results_cnt, \
-    get_axial_slice_body_mask, create_segmentations_masks_full, get_axial_slice_body_mask_nii, get_nii_mean_slice
+    get_axial_slice_body_mask, create_segmentations_masks_full, get_axial_slice_body_mask_nii, get_nii_mean_slice,\
+    create_list_crd_from_color_output, get_pixel_spacing
 
 from pathlib import Path
 
@@ -91,17 +92,26 @@ class DICOMSequencesToMask(abc.ABC):
         axial_slice, number_slice_eit_list = self._search_axial_slice(ribs_detections, i_slices)
         axial_slice_norm = classic_norm(axial_slice[-1].pixel_array)
         only_body_mask = get_axial_slice_body_mask(axial_slice[-1])
-
+        pixel_spacing = get_pixel_spacing(axial_slice[-1])
         axial_slice_norm_body = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
                                                 mask=only_body_mask)
 
         ribs_annotated_image = draw_annotate(ribs_detections, front_slice, number_slice_eit_list)
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
-                                                                        ribs_annotated_image, axial_slice_norm_body)
-
+        segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
+                                                                                      only_body_mask,
+                                                                                      ribs_annotated_image,
+                                                                                      axial_slice_norm_body)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
+
+        response = requests.post(
+            "http://localhost:5003/createMesh/",
+            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
+        )
+        print(response)
+
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
         return answer
 
@@ -147,8 +157,10 @@ class DICOMToMask(DICOMSequencesToMask):
                                                 mask=only_body_mask)
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
-                                                                        ribs_annotated_image, axial_slice_norm_body)
+        segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
+                                                                                      only_body_mask,
+                                                                                      ribs_annotated_image,
+                                                                                      axial_slice_norm_body)
 
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
@@ -166,8 +178,10 @@ class ImageToMask(DICOMSequencesToMask):
         ribs_annotated_image = None
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
-                                                                        ribs_annotated_image, axial_slice_norm_body)
+        segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
+                                                                                      only_body_mask,
+                                                                                      ribs_annotated_image,
+                                                                                      axial_slice_norm_body)
 
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
@@ -190,14 +204,11 @@ class NIIToMask(DICOMSequencesToMask):
                                                mask=only_body_mask)  # Выделяем тело в изображении HU
             axial_segmentations, segmentation_time = self._axial_slice_predict(only_body_hu_img)
             segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-            segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
-                                                                            ribs_annotated_image, only_body_hu_img)
+            segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
+                                                                                          only_body_mask,
+                                                                                          ribs_annotated_image,
+                                                                                          only_body_hu_img)
 
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
             answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
             return answer
-
-
-
-
-

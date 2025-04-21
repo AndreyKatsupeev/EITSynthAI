@@ -32,12 +32,12 @@ def divide_triangles_into_groups(contours):
         - For each class, a corresponding physical group is created in the Gmsh model.
         """
     # Filter out short contours with fewer than 4 points (i.e., less than 9 values)
-    k=-1
+    k = -1
     for i in range(len(contours)):
-        k+=1
-        if k<=len(contours)-1 and len(contours[k])<9:
+        k += 1
+        if k <= len(contours) - 1 and len(contours[k]) < 9:
             contours.pop(k)
-            k-=1
+            k -= 1
     # Retrieve all 2D elements (triangles)
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
     # Get all mesh nodes and their coordinates
@@ -72,6 +72,7 @@ def divide_triangles_into_groups(contours):
             group = gmsh.model.addPhysicalGroup(2, elements)
             gmsh.model.setPhysicalName(2, group, f"Class_{class_id}")
     return class_groups
+
 
 def export_mesh_for_femm(filename, class_groups):
     """
@@ -134,6 +135,7 @@ def export_mesh_for_femm(filename, class_groups):
 
     print(f"Mesh exported to: {filename}")
 
+
 def show_class(class_groups, class_for_showing=-1):
     """
         Hides all elements in the specified class within the Gmsh GUI visualization window.
@@ -160,20 +162,21 @@ def show_class(class_groups, class_for_showing=-1):
         - Use this function for visual verification of how elements are grouped into classes.
         """
     for class_id, elements in class_groups.items():
-        if class_id==class_for_showing:
+        if class_id == class_for_showing:
             gmsh.model.mesh.setVisibility(elements, False)
     gmsh.fltk.run()
 
-def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=False, iShowMeshingResult=False, number_of_showed_class=-1, isExportingToFemm=False, export_filename=None):
+
+def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInnerContours=False, iShowMeshingResult=False,
+                number_of_showed_class=-1, isExportingToFemm=False, export_filename=None):
     """
     Creates a 2D triangular mesh from contour data and optionally exports or visualizes it.
 
     Parameters:
     -----------
-    filepath : str
-        Path to the input text file containing contour data.
-        Each line should represent a single contour in the format:
-        <class_id> x1 y1 x2 y2 ... xn yn
+    pixel_spacing: [0.682, 0.682]
+    polygons: ['3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390',
+               '3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390', ...]
 
     lc : float, optional (default=7)
         Mesh size parameter passed to Gmsh. Controls the fineness of the mesh.
@@ -224,30 +227,32 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
       `divide_triangles_into_groups`, `show_class`, `export_mesh_for_femm`.
     - Uses the `gmsh` Python API.
     """
+    mesh_image = np.array([512,512,3])
+    mesh_data = ''
     gmsh.initialize()
-    contours=[]
-    outer_contour=None
+    contours = []
+    outer_contour = None
     with open(filepath) as file:
         k = -1
         outer_segment = largest_segment_area_index(file)
         file.seek(0)
         for line in file:
-            k+=1
-            geometry_points=[]
-            geometry_lines=[]
+            k += 1
+            geometry_points = []
+            geometry_lines = []
             area = list(map(float, line.strip().split(' ')))
-            if k!=outer_segment:
+            if k != outer_segment:
                 contours.append(area)
             area = [area[0]] + merge_collinear_segments(area[1:], distance_threshold)
-            if k==outer_segment or isShowInnerContours:
-                for i in range(1,len(area)-1):
-                    if i%2:
-                        geometry_points.append(gmsh.model.geo.add_point(area[i], area[i+1], 0, lc))
-                for i in range(-1,len(geometry_points)-1):
-                    if geometry_points[i]!=geometry_points[i+1]:
-                        geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i+1]))
-                if k==outer_segment:
-                    outer_contour=gmsh.model.geo.add_curve_loop(geometry_lines)
+            if k == outer_segment or isShowInnerContours:
+                for i in range(1, len(area) - 1):
+                    if i % 2:
+                        geometry_points.append(gmsh.model.geo.add_point(area[i], area[i + 1], 0, lc))
+                for i in range(-1, len(geometry_points) - 1):
+                    if geometry_points[i] != geometry_points[i + 1]:
+                        geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i + 1]))
+                if k == outer_segment:
+                    outer_contour = gmsh.model.geo.add_curve_loop(geometry_lines)
 
     gmsh.model.geo.add_plane_surface([outer_contour])
     gmsh.model.geo.removeAllDuplicates()
@@ -264,6 +269,8 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
 
     # It finalize the Gmsh API
     gmsh.finalize()
+    return mesh_image, mesh_data
+
 
 def largest_segment_area_index(file):
     """
@@ -376,6 +383,7 @@ def merge_collinear_segments(contour, distance_threshold=1.3):
     merged_contour.extend(contour[-2:])  # Always include the last point
     return merged_contour
 
+
 def point_line_distance(px, py, x1, y1, x2, y2):
     """
         Calculates the perpendicular distance from a point (px, py) to the line
@@ -407,5 +415,10 @@ def point_line_distance(px, py, x1, y1, x2, y2):
         return np.linalg.norm([px - x1, py - y1])
     return abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1) / np.linalg.norm([x2 - x1, y2 - y1])
 
+
 def test_module():
-    create_mesh('.././data/5.txt', 7,1.3,True, isExportingToFemm=True, export_filename="tmp.txt")
+    create_mesh('5.txt', 7, 1.3, True, isExportingToFemm=True, export_filename="tmp.txt")
+
+
+if __name__ == "__main__":
+    test_module()
