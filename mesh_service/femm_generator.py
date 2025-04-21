@@ -205,7 +205,8 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
 
     Returns:
     --------
-    None
+    mesh_image: numpy.array
+    mesh_data: list str ?
 
     Side Effects:
     -------------
