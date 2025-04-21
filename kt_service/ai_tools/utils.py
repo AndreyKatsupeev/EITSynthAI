@@ -226,11 +226,8 @@ def search_number_axial_slice(detections, custom_number_slise=0, image_width=512
     number_axial_slice_list = []
     coordinates = detections.xyxy
     midpoint = image_width / 2
-    print(midpoint)
     # Фильтрация координат, оставляем только те, что правее середины
     right_side_coordinates = [box for box in coordinates if box[0] > midpoint]
-    print(right_side_coordinates)
-    print(len(right_side_coordinates))
     # Сортировка по оси Y (по второму элементу каждого бокса)
     sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
     number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
@@ -247,6 +244,7 @@ def classic_norm(volume, window_level=40, window_width=400):
     hu_max = window_level + window_width // 2
     clipped = numpy.clip(volume, hu_min, hu_max)
     normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(numpy.uint8)
+    normalized = cv2.rotate(normalized, cv2.ROTATE_180)
     return normalized
 
 

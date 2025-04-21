@@ -57,10 +57,6 @@ class DICOMSequencesToMask(abc.ABC):
             front_slice_mean = sagittal_view[:, :, front_slice_mean_num]  # Срез без нормализации
             # Нормализуем пиксели в диапазоне 0....255
             front_slice_norm = cv2.normalize(front_slice_mean, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-            cv2.namedWindow('front_slice_norm', cv2.WINDOW_NORMAL)
-            cv2.imshow("front_slice_norm", front_slice_norm)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
         return front_slice_norm, img_3d, i_slices, custom_number_slise
 
     def _ribs_predict(self, front_slice):
@@ -188,14 +184,10 @@ class NIIToMask(DICOMSequencesToMask):
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
             nii_mean_slice = get_nii_mean_slice(zip_file)
             axial_slice_norm = classic_norm(nii_mean_slice)
+            axial_slice_norm = cv2.rotate(axial_slice_norm, cv2.ROTATE_180)
             only_body_mask = get_axial_slice_body_mask_nii(nii_mean_slice)
             only_body_hu_img = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
                                                mask=only_body_mask)  # Выделяем тело в изображении HU
-
-            cv2.namedWindow('only_body_mask', cv2.WINDOW_NORMAL)
-            cv2.imshow("only_body_mask", only_body_mask)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
             axial_segmentations, segmentation_time = self._axial_slice_predict(only_body_hu_img)
             segmentation_masks_image = create_segmentations_masks(axial_segmentations)
             segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
