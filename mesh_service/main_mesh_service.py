@@ -1,10 +1,10 @@
+import cv2
 import logging
 import zipfile
 from io import BytesIO
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi import FastAPI, Response
 from .femm_generator import create_mesh
-from .utils import create_list_coordinate
 
 # Настройка логирования
 
@@ -26,8 +26,12 @@ async def create_mesh_from_json(data: MeshData):
         # Разбираем входные данные
         pixel_spacing = data.params[:2]
         polygons = data.polygons
-        answer = create_mesh(pixel_spacing, polygons)
-        # answer = create_answer(answer)
+        image_np = create_mesh(pixel_spacing, polygons)
+        _, img_bytes = cv2.imencode(".png", image_np)
+        img_bytes = img_bytes.tobytes()
+
+        # Возвращаем бинарные данные
+        return Response(content=img_bytes, media_type="image/png")
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

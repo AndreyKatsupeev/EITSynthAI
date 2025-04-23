@@ -5,11 +5,12 @@ import cv2
 import logging
 import supervision as sv
 import sys
+import numpy
 from ultralytics import YOLO
 from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, \
     create_answer, classic_norm, draw_annotate, create_segmentations_masks, create_segmentation_results_cnt, \
-    get_axial_slice_body_mask, create_segmentations_masks_full, get_axial_slice_body_mask_nii, get_nii_mean_slice,\
-    create_list_crd_from_color_output, get_pixel_spacing
+    get_axial_slice_body_mask, create_segmentation_masks_full_image, get_axial_slice_body_mask_nii, get_nii_mean_slice, \
+    create_list_crd_from_color_output, get_pixel_spacing, create_color_output
 
 from pathlib import Path
 
@@ -63,7 +64,8 @@ class DICOMSequencesToMask(abc.ABC):
     def _ribs_predict(self, front_slice):
         """"""
         front_slice = cv2.cvtColor(front_slice, cv2.COLOR_BGR2RGB)
-        results = self.ribs_model(front_slice, conf=0.3, verbose=False, device=0)
+        results = self.ribs_model(front_slice, conf=0.3, verbose=False, device=0, show_conf=False,
+                                  show_labels=False)
         detections = sv.Detections.from_ultralytics(results[0])
         return detections
 
@@ -85,7 +87,7 @@ class DICOMSequencesToMask(abc.ABC):
 
     def get_coordinate_slice_from_dicom(self, zip_buffer, answer=None):
         """Класс для автоматического поиска нужного среза из dicom-серии"""
-
+        img_mesh = None
         front_slice, img_3d, i_slices, _ = self._search_front_slise(zip_buffer)
 
         ribs_detections = self._ribs_predict(front_slice)
@@ -99,10 +101,7 @@ class DICOMSequencesToMask(abc.ABC):
         ribs_annotated_image = draw_annotate(ribs_detections, front_slice, number_slice_eit_list)
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
-                                                                                      only_body_mask,
-                                                                                      ribs_annotated_image,
-                                                                                      axial_slice_norm_body)
+        color_output = create_color_output(segmentation_masks_image, only_body_mask)
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
@@ -110,8 +109,16 @@ class DICOMSequencesToMask(abc.ABC):
             "http://localhost:5003/createMesh/",
             json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
         )
-        print(response)
+        if response.status_code == 200:
+            # Получаем байты и конвертируем обратно в OpenCV-формат
+            img_bytes = response.content
+            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
+            img_mesh = cv2.flip(img_mesh, 0)
 
+        segmentation_masks_full_image = create_segmentation_masks_full_image(
+            segmentation_masks_image, only_body_mask, ribs_annotated_image,
+            axial_slice_norm_body, img_mesh
+        )
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
         return answer
 

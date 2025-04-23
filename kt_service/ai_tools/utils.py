@@ -641,17 +641,20 @@ def overlay_masks_with_transparency(base_image, color_mask, alpha=0.8):
     return overlay
 
 
-def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mask=None, ribs_annotated_image=None,
-                                    axial_slice_norm_body=None):
+def create_segmentation_masks_full_image(segmentation_masks_image=None, only_body_mask=None,
+                                       ribs_annotated_image=None, axial_slice_norm_body=None,
+                                       img_mesh=None):
     """
     Создает комбинированное изображение из доступных масок и аннотаций.
     Если какой-то из аргументов пустой (None или пустой массив), он пропускается.
+    Изображение меша (img_mesh) добавляется в конец сетки.
 
     Args:
         segmentation_masks_image: dict с сегментационными масками
         only_body_mask: маска тела
         ribs_annotated_image: изображение с аннотированными ребрами
         axial_slice_norm_body: аксиальный срез с нормализованным цветом
+        img_mesh: изображение с меш-визуализацией (будет добавлено в конец)
 
     Returns:
         Комбинированное изображение с доступными компонентами
@@ -666,15 +669,9 @@ def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mas
     if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
         images_to_combine.append(("2. Axial Slice", axial_slice_norm_body))
 
-    # 3. Обрабатываем segmentation_masks_image и создаем цветные маски, если они есть
+    # 3. Обрабатываем segmentation_masks_image, если он есть
     if segmentation_masks_image is not None and len(segmentation_masks_image) > 0:
-        # Создаем цветную маску и ее варианты
-        color_output = overlay_segmentation_masks(segmentation_masks_image)
-
-        if only_body_mask is not None and numpy.any(only_body_mask):
-            color_output = clear_color_output(only_body_mask, color_output)
-
-        color_output = highlight_small_masks(color_output)
+        color_output = create_color_output(segmentation_masks_image, only_body_mask)
 
         if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
             axial_slice_norm_body_with_color = overlay_masks_with_transparency(axial_slice_norm_body, color_output)
@@ -687,15 +684,19 @@ def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mas
             if image is not None and numpy.any(image):
                 images_to_combine.append((f"{idx}. {key}", image))
 
+    # 4. Обрабатываем img_mesh, если он есть (добавляем в конец)
+    if img_mesh is not None and numpy.any(img_mesh):
+        images_to_combine.append(("Mesh Visualization", img_mesh))
+
     # Если нет изображений для объединения, возвращаем пустое изображение
     if not images_to_combine:
         return numpy.zeros((100, 100, 3), dtype=numpy.uint8)
 
-    # 4. Приводим все изображения к одному размеру (берем максимальные размеры)
+    # 5. Приводим все изображения к одному размеру (берем максимальные размеры)
     max_height = max(img.shape[0] for _, img in images_to_combine)
     max_width = max(img.shape[1] for _, img in images_to_combine)
 
-    # 5. Добавляем подписи и выравниваем размеры
+    # 6. Добавляем подписи и выравниваем размеры
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.8
     font_color = (255, 255, 255)
@@ -727,15 +728,15 @@ def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mas
 
         labeled_images.append(labeled)
 
-    # 6. Определяем размеры сетки
+    # 7. Определяем размеры сетки
     num_images = len(labeled_images)
     cols = min(3, num_images)  # Не более 3 колонок, но меньше если изображений мало
     rows = (num_images + cols - 1) // cols  # Вычисляем нужное количество строк
 
-    # 7. Создаем результирующее изображение
+    # 8. Создаем результирующее изображение
     result = numpy.zeros((max_height * rows, max_width * cols, 3), dtype=numpy.uint8)
 
-    # 8. Заполняем сетку изображениями
+    # 9. Заполняем сетку изображениями
     for i in range(rows):
         for j in range(cols):
             idx = i * cols + j
@@ -746,7 +747,31 @@ def create_segmentations_masks_full(segmentation_masks_image=None, only_body_mas
                 x_end = (j + 1) * max_width
                 result[y_start:y_end, x_start:x_end] = labeled_images[idx]
 
-    return result, color_output
+    return result
+
+
+def create_color_output(segmentation_masks_image, only_body_mask=None):
+    """
+    Создает цветные маски сегментации.
+
+    Args:
+        segmentation_masks_image: dict с сегментационными масками
+        only_body_mask: маска тела (опционально)
+
+    Returns:
+        Цветное изображение с наложенными масками
+    """
+    if segmentation_masks_image is None or len(segmentation_masks_image) == 0:
+        return None
+
+    color_output = overlay_segmentation_masks(segmentation_masks_image)
+
+    if only_body_mask is not None and numpy.any(only_body_mask):
+        color_output = clear_color_output(only_body_mask, color_output)
+
+    color_output = highlight_small_masks(color_output)
+
+    return color_output
 
 
 def create_segmentation_results_cnt(axial_detections):
