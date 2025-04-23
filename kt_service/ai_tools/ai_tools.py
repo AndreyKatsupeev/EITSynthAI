@@ -130,23 +130,38 @@ class DICOMSequencesToMaskCustom(DICOMSequencesToMask):
 
     def get_coordinate_slice_from_dicom_custom(self, zip_buffer, answer=None):
         """"""
+        img_mesh = None
         front_slice, img_3d, i_slices, custom_number_slise = self._search_front_slise(zip_buffer)
         ribs_detections = self._ribs_predict(front_slice)
         axial_slice, number_slice_eit_list = self._search_axial_slice(ribs_detections, i_slices, custom_number_slise)
         axial_slice_norm = classic_norm(axial_slice[-1].pixel_array)
         only_body_mask = get_axial_slice_body_mask(axial_slice[-1])
-
+        pixel_spacing = get_pixel_spacing(axial_slice[-1])
         axial_slice_norm_body = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
                                                 mask=only_body_mask)
-
         ribs_annotated_image = draw_annotate(ribs_detections, front_slice, number_slice_eit_list)
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image = create_segmentations_masks_full(segmentation_masks_image, only_body_mask,
-                                                                        ribs_annotated_image, axial_slice_norm_body)
-
+        color_output = create_color_output(segmentation_masks_image, only_body_mask)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
+
+        response = requests.post(
+            "http://localhost:5003/createMesh/",
+            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
+        )
+        if response.status_code == 200:
+            # Получаем байты и конвертируем обратно в OpenCV-формат
+            img_bytes = response.content
+            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
+            img_mesh = cv2.flip(img_mesh, 0)
+
+        segmentation_masks_full_image = create_segmentation_masks_full_image(
+            segmentation_masks_image, only_body_mask, ribs_annotated_image,
+            axial_slice_norm_body, img_mesh
+        )
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+
         return answer
 
 
@@ -159,17 +174,29 @@ class DICOMToMask(DICOMSequencesToMask):
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
             i_slices, _ = create_dicom_dict(zip_file)
         axial_slice_norm = classic_norm(i_slices[-1].pixel_array)
+        pixel_spacing = get_pixel_spacing(i_slices[-1])
         only_body_mask = get_axial_slice_body_mask(i_slices[-1])
         axial_slice_norm_body = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
                                                 mask=only_body_mask)
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
-                                                                                      only_body_mask,
-                                                                                      ribs_annotated_image,
-                                                                                      axial_slice_norm_body)
-
+        color_output = create_color_output(segmentation_masks_image, only_body_mask)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
+        response = requests.post(
+            "http://localhost:5003/createMesh/",
+            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
+        )
+        if response.status_code == 200:
+            # Получаем байты и конвертируем обратно в OpenCV-формат
+            img_bytes = response.content
+            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
+            img_mesh = cv2.flip(img_mesh, 0)
+
+        segmentation_masks_full_image = create_segmentation_masks_full_image(
+            segmentation_masks_image, only_body_mask, ribs_annotated_image,
+            axial_slice_norm_body, img_mesh
+        )
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
         return answer
 
@@ -183,14 +210,26 @@ class ImageToMask(DICOMSequencesToMask):
         """"""
         only_body_mask = None
         ribs_annotated_image = None
+        pixel_spacing = [1,1]
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-        segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
-                                                                                      only_body_mask,
-                                                                                      ribs_annotated_image,
-                                                                                      axial_slice_norm_body)
-
+        color_output = create_color_output(segmentation_masks_image, only_body_mask)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
+
+        response = requests.post(
+            "http://localhost:5003/createMesh/",
+            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
+        )
+        if response.status_code == 200:
+            # Получаем байты и конвертируем обратно в OpenCV-формат
+            img_bytes = response.content
+            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
+            img_mesh = cv2.flip(img_mesh, 0)
+        segmentation_masks_full_image = create_segmentation_masks_full_image(
+            segmentation_masks_image, only_body_mask, ribs_annotated_image,
+            axial_slice_norm_body, img_mesh
+        )
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
         return answer
 
@@ -202,20 +241,32 @@ class NIIToMask(DICOMSequencesToMask):
         просто берется средний срез в пачке
         """
         ribs_annotated_image = None
+        pixel_spacing = [1,1]
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
             nii_mean_slice = get_nii_mean_slice(zip_file)
             axial_slice_norm = classic_norm(nii_mean_slice)
             axial_slice_norm = cv2.rotate(axial_slice_norm, cv2.ROTATE_180)
             only_body_mask = get_axial_slice_body_mask_nii(nii_mean_slice)
-            only_body_hu_img = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
+            axial_slice_norm_body = cv2.bitwise_and(axial_slice_norm, axial_slice_norm,
                                                mask=only_body_mask)  # Выделяем тело в изображении HU
-            axial_segmentations, segmentation_time = self._axial_slice_predict(only_body_hu_img)
+            axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
             segmentation_masks_image = create_segmentations_masks(axial_segmentations)
-            segmentation_masks_full_image, color_output = create_segmentations_masks_full(segmentation_masks_image,
-                                                                                          only_body_mask,
-                                                                                          ribs_annotated_image,
-                                                                                          only_body_hu_img)
-
+            color_output = create_color_output(segmentation_masks_image, only_body_mask)
+            list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
+
+            response = requests.post(
+                "http://localhost:5003/createMesh/",
+                json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
+            )
+            if response.status_code == 200:
+                # Получаем байты и конвертируем обратно в OpenCV-формат
+                img_bytes = response.content
+                img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
+                img_mesh = cv2.flip(img_mesh, 0)
+            segmentation_masks_full_image = create_segmentation_masks_full_image(
+                segmentation_masks_image, only_body_mask, ribs_annotated_image,
+                axial_slice_norm_body, img_mesh
+            )
             answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
             return answer

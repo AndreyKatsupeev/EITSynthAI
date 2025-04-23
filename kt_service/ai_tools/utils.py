@@ -233,7 +233,7 @@ def search_number_axial_slice(detections, custom_number_slise=0, image_width=512
     number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
     number_axial_slice_list.append(int(sorted_right_side_coordinates[5][1]))
     number_axial_slice_list.append(int(sorted_right_side_coordinates[6][1]))
-    number_axial_slice_list.append(number_axial_slice)
+    number_axial_slice_list.append(number_axial_slice+custom_number_slise)
     return number_axial_slice_list
 
 

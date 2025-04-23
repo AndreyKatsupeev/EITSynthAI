@@ -205,7 +205,7 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     - If an element tag is invalid or not found in the current mesh, it will be silently skipped.
     """
     width, height = image_size
-    img = np.ones((height, width, 3), dtype=np.uint8) * 255
+    img = np.zeros((height, width, 3), dtype=np.uint8)
 
     nodeTags, nodeCoords, _ = gmsh.model.mesh.getNodes()
     # Dict {nodeTag: (x, y)}
