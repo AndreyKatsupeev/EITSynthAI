@@ -63,10 +63,13 @@ def divide_triangles_into_groups(contours, outer_contour_class):
                     contour_class = contours[j][0]
                     contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
                     contour_poly = Polygon(contour_points)
-                    intersection = Polygon(triangle).intersection(contour_poly).area
-                    if intersection > max_intersection:
-                        max_intersection = intersection
-                        best_class = contour_class
+                    try:
+                        intersection = Polygon(triangle).intersection(contour_poly).area
+                        if intersection > max_intersection:
+                            max_intersection = intersection
+                            best_class = contour_class
+                    except:
+                        pass
                 # Assign triangle to the best matching class
                 if best_class not in class_groups:
                     class_groups[best_class] = []
@@ -316,6 +319,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
     gmsh.initialize()
     contours = []
     outer_contour = None
+    outer_contour_class = None
     outer_segment = largest_segment_area_index(polygons)
     for k in range(len(polygons)):
         geometry_points = []
