@@ -3,9 +3,11 @@ import gmsh
 import numpy as np
 from shapely.geometry import Polygon
 import shapely.errors
+import random
+import cv2
 
 
-def divide_triangles_into_groups(contours):
+def divide_triangles_into_groups(contours, outer_contour_class):
     """
         Divides 2D triangular mesh elements into classes based on intersection with given contours.
 
@@ -16,6 +18,9 @@ def divide_triangles_into_groups(contours):
             - The first element is the class ID (an integer).
             - The remaining elements represent the coordinates of the contour's points
               in the format [x1, y1, x2, y2, ..., xn, yn].
+
+        outer_contour_class: integer
+        number of class which includes all elements not divided into another segments
 
         Returns:
         --------
@@ -52,7 +57,7 @@ def divide_triangles_into_groups(contours):
                 n1, n2, n3 = nodes[i * 3: (i + 1) * 3]
                 triangle = [node_dict[n1], node_dict[n2], node_dict[n3]]
                 max_intersection = 0
-                best_class = None
+                best_class = outer_contour_class
                 # Compare triangle with all contours
                 for j in range(len(contours)):
                     contour_class = contours[j][0]
@@ -63,10 +68,9 @@ def divide_triangles_into_groups(contours):
                         max_intersection = intersection
                         best_class = contour_class
                 # Assign triangle to the best matching class
-                if best_class is not None:
-                    if best_class not in class_groups:
-                        class_groups[best_class] = []
-                    class_groups[best_class].append(tags[i])
+                if best_class not in class_groups:
+                    class_groups[best_class] = []
+                class_groups[best_class].append(tags[i])
         # Create physical groups in Gmsh for each class
         for class_id, elements in class_groups.items():
             group = gmsh.model.addPhysicalGroup(2, elements)
@@ -164,7 +168,82 @@ def show_class(class_groups, class_for_showing=-1):
             gmsh.model.mesh.setVisibility(elements, False)
     gmsh.fltk.run()
 
-def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=False, iShowMeshingResult=False, number_of_showed_class=-1, isExportingToFemm=False, export_filename=None):
+def get_image(class_groups, image_size=(1000, 1000), margin=10):
+    """
+    Generates a color-coded image representing finite element classes using OpenCV.
+
+    Each class of elements is drawn in a unique color, with triangle (or polygon) borders rendered in black.
+
+    Parameters:
+    -----------
+    class_groups : dict
+        A dictionary mapping class IDs to lists of element tags.
+        Example: {0: [101, 102], 1: [103, 104], ...}
+
+    image_size : tuple of int, optional
+        Size of the output image in pixels, as (width, height). Default is (1000, 1000).
+
+    margin : int, optional
+        Margin size (in pixels) around the rendered mesh. Default is 10.
+
+    Returns:
+    --------
+    numpy.ndarray
+        A NumPy array representing the RGB image (dtype=np.uint8) with elements
+        filled in class-specific colors and outlined in black.
+
+    Notes:
+    ------
+    - This function automatically retrieves all mesh nodes using `gmsh.model.mesh.getNodes()`.
+    - It uses `gmsh.model.mesh.getElement()` to retrieve node connectivity for each element tag.
+    - Elements are rendered using OpenCV functions: `cv2.fillPoly` for fill, `cv2.polylines` for borders.
+    - If an element tag is invalid or not found in the current mesh, it will be silently skipped.
+    """
+    width, height = image_size
+    img = np.ones((height, width, 3), dtype=np.uint8) * 255
+
+    nodeTags, nodeCoords, _ = gmsh.model.mesh.getNodes()
+    # Dict {nodeTag: (x, y)}
+    node_coords = {
+        tag: (nodeCoords[i], nodeCoords[i + 1])
+        for tag, i in zip(nodeTags, range(0, len(nodeCoords), 3))
+    }
+
+    all_coords = np.array(list(node_coords.values()))
+    min_x, min_y = all_coords.min(axis=0)
+    max_x, max_y = all_coords.max(axis=0)
+
+    def to_pixel(x, y):
+        px = int((x - min_x) / (max_x - min_x) * (width - 2 * margin) + margin)
+        py = int((max_y - y) / (max_y - min_y) * (height - 2 * margin) + margin)
+        return px, py
+
+    # Colors for classes
+    random.seed(18)
+    class_colors = {
+        class_id: tuple(random.randint(0, 255) for _ in range(3))
+        for class_id in class_groups
+    }
+
+    for class_id, element_tags in class_groups.items():
+        for tag in element_tags:
+            try:
+                elementType, nodeTagList, _, _ = gmsh.model.mesh.getElement(tag)
+                num_nodes = gmsh.model.mesh.getElementProperties(elementType)[3]
+                # Dividing nodeTagList in elements with needed nodes count
+                for i in range(0, len(nodeTagList), num_nodes):
+                    nodes = nodeTagList[i:i + num_nodes]
+                    pts = [to_pixel(*node_coords[n]) for n in nodes]
+                    pts_np = np.array(pts, dtype=np.int32)
+                    cv2.fillPoly(img, [np.array(pts, dtype=np.int32)], class_colors[class_id])
+                    cv2.polylines(img, [pts_np], isClosed=True, color=(0, 0, 0), thickness=1)
+            except:
+                pass  # sometimes getElement cannot find tag — leave it
+
+    return img
+
+
+def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=False, show_meshing_result_method="no", number_of_showed_class=-1, isExportingToFemm=False, export_filename=None):
     """
     Creates a 2D triangular mesh from contour data and optionally exports or visualizes it.
 
@@ -185,9 +264,10 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
         If True, all inner contours (not just the outer boundary) will be shown and meshed.
         If False, only the outermost contour is used for geometry creation.
 
-    iShowMeshingResult : bool, optional (default=False)
-        If True, launches the Gmsh GUI (`gmsh.fltk.run()`) and displays the mesh
+    show_meshing_result_method : string, optional (default="no")
+        If method=="gmsh", launches the Gmsh GUI (`gmsh.fltk.run()`) and displays the mesh
         for the specified class (see `number_of_showed_class`).
+        If method=="opencv", creates a numpy array containing image for further display
 
     number_of_showed_class : int, optional (default=-1)
         Specifies which class to display in the Gmsh GUI when `iShowMeshingResult` is True.
@@ -227,6 +307,7 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
     gmsh.initialize()
     contours=[]
     outer_contour=None
+    outer_contour_class=None
     with open(filepath) as file:
         k = -1
         outer_segment = largest_segment_area_index(file)
@@ -247,6 +328,7 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
                     if geometry_points[i]!=geometry_points[i+1]:
                         geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i+1]))
                 if k==outer_segment:
+                    outer_contour_class=int(area[0])
                     outer_contour=gmsh.model.geo.add_curve_loop(geometry_lines)
 
     gmsh.model.geo.add_plane_surface([outer_contour])
@@ -256,9 +338,11 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
     # Generate mesh:
     gmsh.model.mesh.generate(2)
 
-    class_groups = divide_triangles_into_groups(contours)
-    if iShowMeshingResult:
-        show_class(class_groups, 0)
+    class_groups = divide_triangles_into_groups(contours, outer_contour_class)
+    if show_meshing_result_method=="gmsh":
+        show_class(class_groups, number_of_showed_class)
+    elif show_meshing_result_method=="opencv":
+        img = get_image(class_groups)
     if isExportingToFemm and export_filename is not None:
         export_mesh_for_femm(export_filename, class_groups)
 
@@ -408,4 +492,4 @@ def point_line_distance(px, py, x1, y1, x2, y2):
     return abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1) / np.linalg.norm([x2 - x1, y2 - y1])
 
 def test_module():
-    create_mesh('.././data/5.txt', 7,1.3,True, isExportingToFemm=True, export_filename="tmp.txt")
+    create_mesh('.././data/3.txt', 7,1.3,True, show_meshing_result_method="opencv", isExportingToFemm=True, export_filename="tmp.txt")
