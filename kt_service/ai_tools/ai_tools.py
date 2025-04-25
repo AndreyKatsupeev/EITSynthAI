@@ -6,7 +6,10 @@ import logging
 import supervision as sv
 import sys
 import numpy
+from .. import config
+import zipfile
 from ultralytics import YOLO
+from typing import Dict
 from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, \
     create_answer, classic_norm, draw_annotate, create_segmentations_masks, create_segmentation_results_cnt, \
     get_axial_slice_body_mask, create_segmentation_masks_full_image, get_axial_slice_body_mask_nii, get_nii_mean_slice, \
@@ -16,11 +19,6 @@ from pathlib import Path
 
 # Добавляем папку `kt-service` в PYTHONPATH
 sys.path.append(str(Path(__file__).parent))
-
-from .. import config
-import zipfile
-
-from typing import Dict
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -43,9 +41,11 @@ class DICOMSequencesToMask(abc.ABC):
             self.axial_model_path = config.axial_slice_segm_model
         self.axial_model = self._load_model(self.axial_model_path)
 
+    @staticmethod
     def _load_model(self, model_path):
         return YOLO(model_path, task='segment')
 
+    @staticmethod
     def _search_front_slise(self, zip_buffer, custom_number_slise=0):
         """"""
         # Разархивирование в память
@@ -77,6 +77,7 @@ class DICOMSequencesToMask(abc.ABC):
         segmentation_time = time.time() - t1
         return results, segmentation_time
 
+    @staticmethod
     def _search_axial_slice(self, detections, i_slices, custom_number_slise=0):
         """"""
         axial_slice_list = []

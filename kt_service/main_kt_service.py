@@ -30,7 +30,6 @@ image_axial_slice_to_mask = ImageToMask()
 nii_seq_to_mask = NIIToMask()
 
 
-
 @app.post("/uploadDicomSequence")
 async def upload_file(file: UploadFile = File(...)):
     try:

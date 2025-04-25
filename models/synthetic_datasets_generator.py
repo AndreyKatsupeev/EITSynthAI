@@ -59,6 +59,7 @@ def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50
     femm.newdocument(3)#3 - current flow problem
     femm.ci_probdef(units, problemtype, freq, precision, depth)
 
+
 def femm_add_contour(coords_list):
     '''add closed countour by points coordinates
     Args:

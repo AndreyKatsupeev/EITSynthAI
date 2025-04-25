@@ -4,6 +4,7 @@ from datetime import datetime
 import femm
 import numpy as np
 
+
 def load_yolo(filepath):
     """
     load tissues borders from yolo dataset into dict, where 
@@ -57,6 +58,7 @@ def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50
     femm.newdocument(3)#3 - current flow problem
     femm.ci_probdef(units, problemtype, freq, precision, depth)
 
+
 def femm_add_contour(coords_list):
     '''add closed countour by points coordinates
     Args:
@@ -77,6 +79,7 @@ def femm_add_contour(coords_list):
         femm.ci_addnode(x2, y2)
         femm.ci_addsegment(x1, y1, x2, y2)
     femm.ci_addsegment(x0, y0, x2, y2)
+
 
 def test():
     ''''''
