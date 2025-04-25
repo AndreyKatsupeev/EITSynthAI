@@ -15,7 +15,6 @@ runs
 *.csv
 .pytest_cache
 config.json
-/models
 
 env
 .python-version
