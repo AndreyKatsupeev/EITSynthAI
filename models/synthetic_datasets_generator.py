@@ -4,6 +4,7 @@ from datetime import datetime
 import femm
 import numpy as np
 
+
 def load_yolo(filepath):
     """
     load tissues borders from yolo dataset into dict, where 
@@ -42,6 +43,7 @@ def load_yolo(filepath):
                 borders[tissue_type].append([x, y])
     return borders
 
+
 def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50000, precision = 1e-8, depth = 10):
     '''
     create new femm current flow problem
@@ -77,6 +79,7 @@ def femm_add_contour(coords_list):
         femm.ci_addnode(x2, y2)
         femm.ci_addsegment(x1, y1, x2, y2)
     femm.ci_addsegment(x0, y0, x2, y2)
+
 
 def test():
     ''''''

@@ -221,7 +221,8 @@ def remove_small_regions(image, min_size=5):
 
     return result_image
 
-def  create_femm_mask_file(mask_list, color_output, img_normalized, final_output, pixel_spacing, file_name):
+
+def create_femm_mask_file(mask_list, color_output, img_normalized, final_output, pixel_spacing, file_name):
     """
 
     Args:
