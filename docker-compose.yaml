@@ -1,0 +1,40 @@
+version: '1.0'
+
+services:
+  kt-service:
+    shm_size: 20g
+    restart: always
+    build:
+      context: ./kt-service
+      dockerfile: Dockerfile
+    runtime: nvidia
+    ports:
+      - "8000:8000"
+    volumes:
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
+      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi
+      - ./temp:/app/temp
+      - ./imgs:/app/imgs
+      - ./logs:/app/logs:rw,uid=1000,gid=1000
+    devices:
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia0:/dev/nvidia0
+    networks:
+      - app-network
+    depends_on:
+      - frontend
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16g
+          cpus: '4.0'
+
+networks:
+  app-network:
+    driver: bridge
