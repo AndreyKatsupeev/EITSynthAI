@@ -1,5 +1,5 @@
 from lungmask import LMInferer
-import SimpleITK as sitk
+from SimpleITK import ReadImage
 import cv2
 import numpy as np
 import pydicom
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     for dicom_img in file_path_list:
 
-        input_image = sitk.ReadImage(dicom_img)
+        input_image = ReadImage(dicom_img)
         segmentation = inferer.apply(input_image)  # default model is U-net(R231)
         segmentation = np.squeeze(segmentation)
 

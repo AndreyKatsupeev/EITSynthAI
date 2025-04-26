@@ -1,6 +1,5 @@
 import os
-import numpy as np
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon
 from collections import defaultdict
 
 
@@ -37,7 +36,8 @@ def calculate_iou(poly1, poly2):
         intersection = shapely_poly1.intersection(shapely_poly2).area
         union = shapely_poly1.union(shapely_poly2).area
         return intersection / union if union > 0 else 0.0
-    except:
+    except Exception as e:
+        print(e)
         return 0.0
 
 
@@ -84,7 +84,7 @@ def evaluate_segmentation(gt_dir, pred_dir, iou_threshold=0.5):
             results[class_id]['fp'] += len(pred_class) - len(matched_pred)
 
     # Вычисление метрик для каждого класса
-    metrics = {}
+    metrics_dict = {}
     for class_id in results:
         tp = results[class_id]['tp']
         fp = results[class_id]['fp']
@@ -94,7 +94,7 @@ def evaluate_segmentation(gt_dir, pred_dir, iou_threshold=0.5):
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
         accuracy = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0
 
-        metrics[class_id] = {
+        metrics_dict[class_id] = {
             'TP': tp,
             'FP': fp,
             'FN': fn,
@@ -103,7 +103,7 @@ def evaluate_segmentation(gt_dir, pred_dir, iou_threshold=0.5):
             'Accuracy': accuracy
         }
 
-    return metrics
+    return metrics_dict
 
 
 if __name__ == "__main__":

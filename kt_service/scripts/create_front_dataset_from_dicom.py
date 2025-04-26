@@ -33,9 +33,11 @@ def read_dicom_folder(folder_path):
             dicom_data_slice = pydicom.dcmread(filepath)  # Срез с метаданными
             series_uid = dicom_data_slice.SeriesInstanceUID
             series_dict[series_uid].append(dicom_data_slice)
-        except:
+        except Exception as e:
+            print(e)
             pass
     return series_dict
+
 
 def filter_arrays(array_list):
     # Создаем новый список, в который будем добавлять только массивы с размером 512x512
@@ -67,7 +69,8 @@ def convert_to_3d(slices):
     image_orientation = slices[0][0x0020, 0x0037].value  # Ориентация изображения (6 чисел)
     try:
         patient_orientation = slices[0][0x0020, 0x0020].value  # Ориентация пациента (например, A\P)
-    except:
+    except Exception as e:
+        print(e)
         patient_orientation = None
     # Стекирование в 3D-массив
     img_3d = numpy.stack(pixel_data,
@@ -82,9 +85,12 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
 
     :param img_3d: 3D-массив (аксиальные срезы)
     :param ds: DICOM dataset (содержит метаданные, включая PatientPosition, ImageOrientationPatient и PatientOrientation)
+    :param patient_position
+    :param image_orientation
+    :param patient_orientation
     :return: 3D-массив в сагиттальной плоскости
     """
-
+    sagittal_view = None
     # Перестановка осей для преобразования аксиального в сагиттальный вид
     if patient_position == 'FFS':
         sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
@@ -115,7 +121,9 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
 
     return sagittal_view
 
+
 if __name__ == "__main__":
+    file_name = ''
     global_count = 0
     for dicom_dir in tqdm(dicom_folders_name):
         slices = read_dicom_folder(f'{dicom_dataset_dir}/{dicom_dir}')  # список всех dicom из папки
@@ -134,10 +142,10 @@ if __name__ == "__main__":
                 global_count += 1
                 # if global_count == 20:
                 #     exit()
+                # cv2.namedWindow('sagittal_view', cv2.WINDOW_NORMAL)
+                # cv2.imshow('sagittal_view', sagittal_view)
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
 
-                    # cv2.namedWindow('sagittal_view', cv2.WINDOW_NORMAL)
-                    # cv2.imshow('sagittal_view', sagittal_view)
-                    # cv2.waitKey(0)
-                    # cv2.destroyAllWindows()
-            except:
-                print(file_name)
+            except Exception as e:
+                print(file_name, 'Error:', e)
