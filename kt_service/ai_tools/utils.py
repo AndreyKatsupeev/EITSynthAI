@@ -99,7 +99,8 @@ def convert_to_3d(slices):
     image_orientation = slices[0][0x0020, 0x0037].value  # Ориентация изображения (6 чисел)
     try:
         patient_orientation = slices[0][0x0020, 0x0020].value  # Ориентация пациента (например, A\P)
-    except:
+    except Exception as e:
+        print(e)
         patient_orientation = None
     # Стекирование в 3D-массив
     img_3d = numpy.stack(pixel_data,
@@ -115,6 +116,7 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
     :param ds: DICOM dataset (содержит метаданные, включая PatientPosition, ImageOrientationPatient и PatientOrientation)
     :return: 3D-массив в сагиттальной плоскости
     """
+    sagittal_view = None
     patient_position = 'FFS'
     # Перестановка осей для преобразования аксиального в сагиттальный вид
     if patient_position == 'FFS':
@@ -787,6 +789,7 @@ def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segme
     Args:
         segmentation_masks_full_image: изображение (numpy array)
         segmentation_results_cnt: текстовые данные (str)
+        segmentation_time
 
     Returns:
         dict: словарь с ответом, содержащим изображение в base64 и текст

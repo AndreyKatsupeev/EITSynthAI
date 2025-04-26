@@ -29,22 +29,24 @@ def load_yolo(filepath):
                         y.append(int(val))
                         try:
                             if (x[-2], y[-2]) == (x[-1], y[-1]):
-                                del(x[-1])
-                                del(y[-1])
-                        except:
+                                del (x[-1])
+                                del (y[-1])
+                        except Exception as e:
+                            print(e)
                             pass
                 else:
                     tissue_type = val
             if len(x) != len(y):
                 raise ValueError(f'len(x) != len(y): {len(x)} != {len(y)}')
-            if len(x)>=3:
-                if not tissue_type in borders:
+            if len(x) >= 3:
+                if tissue_type not in borders:  # if not tissue_type in borders:
                     borders[tissue_type] = []
                 borders[tissue_type].append([x, y])
     return borders
 
-def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50000, precision = 1e-8, depth = 10):
-    '''
+
+def femm_create_problem(units='millimeters', problemtype='planar', freq=50000, precision=1e-8, depth=10):
+    """
     create new femm current flow problem
     Args:
         units - "inches", "millimeters", "centimeters", "mils", "meters", "micrometers"
@@ -53,21 +55,22 @@ def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50
         precision - solver precission (RMS of the residual)
         depth - depth of the problem in the into-the-page direction for 2-D planar problems
     Returns:
-    '''
+    """
     femm.openfemm()
-    femm.newdocument(3)#3 - current flow problem
+    femm.newdocument(3)  # 3 - current flow problem
     femm.ci_probdef(units, problemtype, freq, precision, depth)
 
 
 def femm_add_contour(coords_list):
-    '''add closed countour by points coordinates
+    """
+    add closed countour by points coordinates
     Args:
         coords - [x : list, y : list]
     Returns:
-        
-    TODO: if multiple points lie on the same line - 
+
+    TODO: if multiple points lie on the same line -
     ignore all points ignore all points except the first and last
-    '''
+    """
     coords = np.transpose(np.array([coords_list[0],coords_list[1]]))
     x0 = coords[0, 0]
     y0 = coords[0, 1]
@@ -82,7 +85,10 @@ def femm_add_contour(coords_list):
 
 
 def test():
-    ''''''
+    """
+    Provides testing
+    :return: None
+    """
     start = datetime.now()
     print(f'Started at {start}')
     borders = load_yolo(r'./data/IOP_870/IOP_870.txt')

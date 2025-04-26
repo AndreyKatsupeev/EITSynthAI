@@ -5,6 +5,7 @@ from io import BytesIO
 
 def dicom_sequence_to_zip(uploaded_files, custom_input=None):
     """"""
+    zip_buffer = None
     if uploaded_files:
         # Создаем архив в памяти
         zip_buffer = BytesIO()
@@ -26,6 +27,7 @@ def dicom_sequence_custom_to_zip(uploaded_files, custom_input=None):
     Returns:
         BytesIO: Буфер с ZIP-архивом
     """
+    zip_buffer = None
     if uploaded_files:
         # Создаем архив в памяти
         zip_buffer = BytesIO()
@@ -43,6 +45,7 @@ def dicom_sequence_custom_to_zip(uploaded_files, custom_input=None):
 
 def dicom_frame_to_zip(uploaded_files, custom_input=None):
     """"""
+    zip_buffer = None
     if uploaded_files:
         # Создаем архив в памяти
         zip_buffer = BytesIO()
@@ -55,6 +58,7 @@ def dicom_frame_to_zip(uploaded_files, custom_input=None):
 
 def image_axial_slice_to_zip(uploaded_files, custom_input=None):
     """"""
+    zip_buffer = None
     if uploaded_files:
         # Создаем архив в памяти
         zip_buffer = BytesIO()
@@ -64,8 +68,10 @@ def image_axial_slice_to_zip(uploaded_files, custom_input=None):
                 zip_file.writestr(uploaded_file.name, uploaded_file.getvalue())
     return zip_buffer
 
+
 def nii_sequence_to_zip(uploaded_files):
     """"""
+    zip_buffer = None
     if uploaded_files:
         # Создаем архив в памяти
         zip_buffer = BytesIO()

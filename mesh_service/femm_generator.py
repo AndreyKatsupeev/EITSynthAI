@@ -67,7 +67,8 @@ def divide_triangles_into_groups(contours, outer_contour_class):
                         if intersection > max_intersection:
                             max_intersection = intersection
                             best_class = contour_class
-                    except:
+                    except Exception as e:
+                        print(e)
                         pass
                 # Assign triangle to the best matching class
                 if best_class not in class_groups:
@@ -207,16 +208,16 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     width, height = image_size
     img = np.zeros((height, width, 3), dtype=np.uint8)
 
-    nodeTags, nodeCoords, _ = gmsh.model.mesh.getNodes()
+    node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
     # Dict {nodeTag: (x, y)}
-    node_coords = {
-        tag: (nodeCoords[i], nodeCoords[i + 1])
-        for tag, i in zip(nodeTags, range(0, len(nodeCoords), 3))
+    node_coordinates = {
+        tag: (node_coords[i], node_coords[i + 1])
+        for tag, i in zip(node_tags, range(0, len(node_coords), 3))
     }
 
-    all_coords = np.array(list(node_coords.values()))
-    min_x, min_y = all_coords.min(axis=0)
-    max_x, max_y = all_coords.max(axis=0)
+    all_coordinates = np.array(list(node_coordinates.values()))
+    min_x, min_y = all_coordinates.min(axis=0)
+    max_x, max_y = all_coordinates.max(axis=0)
 
     def to_pixel(x, y):
         px = int((x - min_x) / (max_x - min_x) * (width - 2 * margin) + margin)
@@ -229,24 +230,25 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     for class_id, element_tags in class_groups.items():
         for tag in element_tags:
             try:
-                elementType, nodeTagList, _, _ = gmsh.model.mesh.getElement(tag)
-                num_nodes = gmsh.model.mesh.getElementProperties(elementType)[3]
+                element_type, node_tag_list, _, _ = gmsh.model.mesh.getElement(tag)
+                num_nodes = gmsh.model.mesh.getElementProperties(element_type)[3]
                 # Dividing nodeTagList in elements with needed nodes count
-                for i in range(0, len(nodeTagList), num_nodes):
-                    nodes = nodeTagList[i:i + num_nodes]
+                for i in range(0, len(node_tag_list), num_nodes):
+                    nodes = node_tag_list[i:i + num_nodes]
                     pts = [to_pixel(*node_coords[n]) for n in nodes]
                     pts_np = np.array(pts, dtype=np.int32)
                     cv2.fillPoly(img, [np.array(pts, dtype=np.int32)], class_colors[int(class_id)])
                     cv2.polylines(img, [pts_np], isClosed=True, color=(0, 0, 0), thickness=1)
-            except:
+            except Exception as e:
+                print(e)
                 pass  # sometimes getElement cannot find tag — leave it
 
     return img
 
 
-def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInnerContours=False,
+def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_inner_contours=False,
                 show_meshing_result_method="opencv",
-                number_of_showed_class=-1, isExportingToFemm=True, export_filename=None):
+                number_of_showed_class=-1, is_exporting_to_femm=True, export_filename=None):
     """
     Creates a 2D triangular mesh from contour data and optionally exports or visualizes it.
 
@@ -265,7 +267,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
     distance_threshold : float, optional (default=1.3)
         Distance threshold used when merging collinear segments in the contour.
 
-    isShowInnerContours : bool, optional (default=False)
+    is_show_inner_contours : bool, optional (default=False)
         If True, all inner contours (not just the outer boundary) will be shown and meshed.
         If False, only the outermost contour is used for geometry creation.
 
@@ -326,7 +328,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
         if k != outer_segment:
             contours.append(area)
         area = [area[0]] + merge_collinear_segments(area[1:], distance_threshold)
-        if k == outer_segment or isShowInnerContours:
+        if k == outer_segment or is_show_inner_contours:
             for i in range(1, len(area) - 1):
                 if i % 2:
                     geometry_points.append(gmsh.model.geo.add_point(area[i], area[i + 1], 0, lc))
@@ -350,9 +352,9 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
         show_class(class_groups, number_of_showed_class)
     elif show_meshing_result_method == "opencv":
         img = get_image(class_groups)
-    if isExportingToFemm and export_filename is not None:
+    if is_exporting_to_femm and export_filename is not None:
         export_mesh_for_femm(export_filename, class_groups)
-    # It finalize the Gmsh API
+    # It finalizes the Gmsh API
     gmsh.finalize()
     return img
 
@@ -576,7 +578,7 @@ def test_module():
                 7,
                 1.3, True,
                 show_meshing_result_method="opencv",
-                isExportingToFemm=True,
+                is_exporting_to_femm=True,
                 export_filename="tmp.txt")
 
 

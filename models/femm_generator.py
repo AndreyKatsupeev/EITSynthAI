@@ -37,12 +37,12 @@ def divide_triangles_into_groups(contours, outer_contour_class):
         - For each class, a corresponding physical group is created in the Gmsh model.
         """
     # Filter out short contours with fewer than 4 points (i.e., less than 9 values)
-    k=-1
+    k = -1
     for i in range(len(contours)):
-        k+=1
-        if k<=len(contours)-1 and len(contours[k])<9:
+        k += 1
+        if k <= len(contours)-1 and len(contours[k]) < 9:
             contours.pop(k)
-            k-=1
+            k -= 1
     # Retrieve all 2D elements (triangles)
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
     # Get all mesh nodes and their coordinates
@@ -76,6 +76,7 @@ def divide_triangles_into_groups(contours, outer_contour_class):
             group = gmsh.model.addPhysicalGroup(2, elements)
             gmsh.model.setPhysicalName(2, group, f"Class_{class_id}")
     return class_groups
+
 
 def export_mesh_for_femm(filename, class_groups):
     """
@@ -138,6 +139,7 @@ def export_mesh_for_femm(filename, class_groups):
 
     print(f"Mesh exported to: {filename}")
 
+
 def show_class(class_groups, class_for_showing=-1):
     """
         Hides all elements in the specified class within the Gmsh GUI visualization window.
@@ -164,9 +166,10 @@ def show_class(class_groups, class_for_showing=-1):
         - Use this function for visual verification of how elements are grouped into classes.
         """
     for class_id, elements in class_groups.items():
-        if class_id==class_for_showing:
+        if class_id == class_for_showing:
             gmsh.model.mesh.setVisibility(elements, False)
     gmsh.fltk.run()
+
 
 def get_image(class_groups, image_size=(1000, 1000), margin=10):
     """
@@ -202,16 +205,16 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     width, height = image_size
     img = np.ones((height, width, 3), dtype=np.uint8) * 255
 
-    nodeTags, nodeCoords, _ = gmsh.model.mesh.getNodes()
+    node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
     # Dict {nodeTag: (x, y)}
-    node_coords = {
-        tag: (nodeCoords[i], nodeCoords[i + 1])
-        for tag, i in zip(nodeTags, range(0, len(nodeCoords), 3))
+    node_coordinates = {
+        tag: (node_coords[i], node_coords[i + 1])
+        for tag, i in zip(node_tags, range(0, len(node_coords), 3))
     }
 
-    all_coords = np.array(list(node_coords.values()))
-    min_x, min_y = all_coords.min(axis=0)
-    max_x, max_y = all_coords.max(axis=0)
+    all_coordinates = np.array(list(node_coordinates.values()))
+    min_x, min_y = all_coordinates.min(axis=0)
+    max_x, max_y = all_coordinates.max(axis=0)
 
     def to_pixel(x, y):
         px = int((x - min_x) / (max_x - min_x) * (width - 2 * margin) + margin)
@@ -228,22 +231,24 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     for class_id, element_tags in class_groups.items():
         for tag in element_tags:
             try:
-                elementType, nodeTagList, _, _ = gmsh.model.mesh.getElement(tag)
-                num_nodes = gmsh.model.mesh.getElementProperties(elementType)[3]
+                element_type, node_tag_list, _, _ = gmsh.model.mesh.getElement(tag)
+                num_nodes = gmsh.model.mesh.getElementProperties(element_type)[3]
                 # Dividing nodeTagList in elements with needed nodes count
-                for i in range(0, len(nodeTagList), num_nodes):
-                    nodes = nodeTagList[i:i + num_nodes]
+                for i in range(0, len(node_tag_list), num_nodes):
+                    nodes = node_tag_list[i:i + num_nodes]
                     pts = [to_pixel(*node_coords[n]) for n in nodes]
                     pts_np = np.array(pts, dtype=np.int32)
                     cv2.fillPoly(img, [np.array(pts, dtype=np.int32)], class_colors[class_id])
                     cv2.polylines(img, [pts_np], isClosed=True, color=(0, 0, 0), thickness=1)
-            except:
+            except Exception as e:
+                print(e)
                 pass  # sometimes getElement cannot find tag — leave it
 
     return img
 
 
-def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=False, show_meshing_result_method="no", number_of_showed_class=-1, isExportingToFemm=False, export_filename=None):
+def create_mesh(filepath, lc=7, distance_threshold=1.3, is_show_inner_contours=False, show_meshing_result_method="no",
+                number_of_showed_class=-1, is_exporting_to_femm=False, export_filename=None):
     """
     Creates a 2D triangular mesh from contour data and optionally exports or visualizes it.
 
@@ -305,31 +310,31 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
     - Uses the `gmsh` Python API.
     """
     gmsh.initialize()
-    contours=[]
-    outer_contour=None
-    outer_contour_class=None
+    contours = []
+    outer_contour = None
+    outer_contour_class = None
     with open(filepath) as file:
         k = -1
         outer_segment = largest_segment_area_index(file)
         file.seek(0)
         for line in file:
-            k+=1
-            geometry_points=[]
-            geometry_lines=[]
+            k += 1
+            geometry_points = []
+            geometry_lines = []
             area = list(map(float, line.strip().split(' ')))
-            if k!=outer_segment:
+            if k != outer_segment:
                 contours.append(area)
             area = [area[0]] + merge_collinear_segments(area[1:], distance_threshold)
-            if k==outer_segment or isShowInnerContours:
-                for i in range(1,len(area)-1):
-                    if i%2:
+            if k == outer_segment or is_show_inner_contours:
+                for i in range(1, len(area)-1):
+                    if i % 2:
                         geometry_points.append(gmsh.model.geo.add_point(area[i], area[i+1], 0, lc))
-                for i in range(-1,len(geometry_points)-1):
-                    if geometry_points[i]!=geometry_points[i+1]:
+                for i in range(-1, len(geometry_points)-1):
+                    if geometry_points[i] != geometry_points[i+1]:
                         geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i+1]))
-                if k==outer_segment:
-                    outer_contour_class=int(area[0])
-                    outer_contour=gmsh.model.geo.add_curve_loop(geometry_lines)
+                if k == outer_segment:
+                    outer_contour_class = int(area[0])
+                    outer_contour = gmsh.model.geo.add_curve_loop(geometry_lines)
 
     gmsh.model.geo.add_plane_surface([outer_contour])
     gmsh.model.geo.removeAllDuplicates()
@@ -339,15 +344,16 @@ def create_mesh(filepath, lc=7, distance_threshold=1.3, isShowInnerContours=Fals
     gmsh.model.mesh.generate(2)
 
     class_groups = divide_triangles_into_groups(contours, outer_contour_class)
-    if show_meshing_result_method=="gmsh":
+    if show_meshing_result_method == "gmsh":
         show_class(class_groups, number_of_showed_class)
-    elif show_meshing_result_method=="opencv":
+    elif show_meshing_result_method == "opencv":
         img = get_image(class_groups)
-    if isExportingToFemm and export_filename is not None:
+    if is_exporting_to_femm and export_filename is not None:
         export_mesh_for_femm(export_filename, class_groups)
 
-    # It finalize the Gmsh API
+    # It finalizes the Gmsh API
     gmsh.finalize()
+
 
 def largest_segment_area_index(file):
     """
@@ -460,6 +466,7 @@ def merge_collinear_segments(contour, distance_threshold=1.3):
     merged_contour.extend(contour[-2:])  # Always include the last point
     return merged_contour
 
+
 def point_line_distance(px, py, x1, y1, x2, y2):
     """
         Calculates the perpendicular distance from a point (px, py) to the line
@@ -491,5 +498,7 @@ def point_line_distance(px, py, x1, y1, x2, y2):
         return np.linalg.norm([px - x1, py - y1])
     return abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1) / np.linalg.norm([x2 - x1, y2 - y1])
 
+
 def test_module():
-    create_mesh('.././data/3.txt', 7,1.3,True, show_meshing_result_method="opencv", isExportingToFemm=True, export_filename="tmp.txt")
+    create_mesh('.././data/3.txt', 7, 1.3, True,
+                show_meshing_result_method="opencv", is_exporting_to_femm=True, export_filename="tmp.txt")

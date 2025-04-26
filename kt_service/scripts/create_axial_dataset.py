@@ -8,11 +8,13 @@ import pydicom
 import sys
 import traceback
 
+from pydicom.filebase import DicomBytesIO
+from EITSynthAI.kt_service.ai_tools.ai_tools import DICOMSequencesToMask
+from EITSynthAI.kt_service.ai_tools.utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, create_answer
+
+
 # Добавляем корень проекта в пути Python
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pydicom.filebase import DicomBytesIO
-from ai_tools.ai_tools import DICOMSequencesToMask
-from ai_tools.utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, create_answer
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +42,8 @@ def read_dicom_folder(folder_path):
             dicom_data_slice = pydicom.dcmread(filepath)  # Срез с метаданными
             series_uid = dicom_data_slice.SeriesInstanceUID
             series_dict[series_uid].append(dicom_data_slice)
-        except:
+        except Exception as e:
+            print(e)
             pass
     return series_dict
 
@@ -67,12 +70,12 @@ def check_work_folders(path):
         os.makedirs(path)
         print("Created save directories")
 
+
 def log_image_normalization(new_image):
     """"""
     img_log = numpy.log1p(new_image)
     img_log_normalized = (img_log - img_log.min()) / (img_log.max() - img_log.min()) * 255.0
     return img_log_normalized
-
 
 
 def vignetting_image_normalization(new_image):
