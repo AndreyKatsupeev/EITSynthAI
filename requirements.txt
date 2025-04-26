@@ -1,0 +1,17 @@
+toml
+opencv-python
+numpy
+pydicom
+tqdm
+supervision
+lungmask
+SimpleITK
+streamlit
+ultralytics
+shapely
+fastapi
+pydantic
+gmsh
+pyfemm
+nibabel
+scikit-learn

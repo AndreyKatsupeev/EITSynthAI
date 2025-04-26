@@ -21,3 +21,8 @@ This library is designed to process tomographic images for medical research, ena
 ## Contribution
 
 Contributions are welcome! Please create a pull request or submit an issue if you encounter problems or have ideas for improvement.
+
+This project is funded by Foundation for Assistance to Small Innovative Enterprises in the Scientific and Technical Sphere, Russia, Moscow.
+## Run
+
+

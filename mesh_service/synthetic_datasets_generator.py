@@ -43,7 +43,6 @@ def load_yolo(filepath):
                 borders[tissue_type].append([x, y])
     return borders
 
-
 def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50000, precision = 1e-8, depth = 10):
     '''
     create new femm current flow problem

@@ -1,1 +1,0 @@
-# Core image processing utilities
