@@ -1,15 +1,23 @@
+import base64
 import requests
 import streamlit as st
-from PIL import Image
+import time
 import io
+
+import frontend_config as config
+
+
+from PIL import Image
+
+
 from frontend_utils import dicom_sequence_to_zip, dicom_sequence_custom_to_zip, dicom_frame_to_zip, \
     image_axial_slice_to_zip, nii_sequence_to_zip
-import base64
-import time
+
 
 # Настройка страницы
 st.set_page_config(page_title="", layout="wide")
-st.markdown("<h2 style='text-align: center; color: white;'>Сервис формирования датасета для ЭИТ</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: white;'>Сервис формирования датасета для ЭИТ</h2>",
+            unsafe_allow_html=True)
 col1, col2 = st.columns(2)
 tab1, tab2 = st.tabs(["Обработчик файлов", "Запуск тестов"])
 
@@ -59,15 +67,15 @@ if __name__ == "__main__":
                         dicom_zip = dicom_sequence_to_zip(uploaded_file)
                         files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
                         t_start = time.time()
-                        response = requests.post("http://localhost:5001/uploadDicomSequence/", files=files)
-                        t_finish = time.time()-t_start
+                        response = requests.post(config.upload_dicom_sequence_http, files=files)
+                        t_finish = time.time() - t_start
 
                         if response.status_code == 200:
                             result = response.json()
 
                             # Отображаем время выполнения
                             st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
-                            st.success(f"Время сегментации {result['segmentation_time'] } c")
+                            st.success(f"Время сегментации {result['segmentation_time']} c")
 
                             # Отображаем текстовые данные
                             if 'text_data' in result:
@@ -91,7 +99,7 @@ if __name__ == "__main__":
                         dicom_zip = dicom_sequence_custom_to_zip(uploaded_file, custom_input)
                         files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
                         t_start = time.time()
-                        response = requests.post("http://localhost:5001/uploadDicomSequenceCustom/", files=files)
+                        response = requests.post(config.upload_dicom_sequence_custom_http, files=files)
                         t_finish = time.time() - t_start
 
                         if response.status_code == 200:
@@ -123,7 +131,7 @@ if __name__ == "__main__":
                         dicom_zip = dicom_frame_to_zip(uploaded_file)
                         files = {'file': ('dicom_files.zip', dicom_zip.getvalue(), 'application/zip')}
                         t_start = time.time()
-                        response = requests.post("http://localhost:5001/uploadDicomFrame/", files=files)
+                        response = requests.post(config.upload_dicom_frame_http, files=files)
                         t_finish = time.time() - t_start
 
                         if response.status_code == 200:
@@ -155,7 +163,7 @@ if __name__ == "__main__":
                         image_axial_slice_zip = image_axial_slice_to_zip(uploaded_file)
                         files = {'file': ('dicom_files.zip', image_axial_slice_zip.getvalue(), 'application/zip')}
                         t_start = time.time()
-                        response = requests.post("http://localhost:5001/uploadImageAxialSlice/", files=files)
+                        response = requests.post(config.upload_image_axial_slice_http, files=files)
                         t_finish = time.time() - t_start
 
                         if response.status_code == 200:
@@ -187,7 +195,7 @@ if __name__ == "__main__":
                         nii_zip = nii_sequence_to_zip(uploaded_file)
                         files = {'file': ('dicom_files.zip', nii_zip.getvalue(), 'application/zip')}
                         t_start = time.time()
-                        response = requests.post("http://localhost:5001/uploadNII/", files=files)
+                        response = requests.post(config.upload_nii_http, files=files)
                         t_finish = time.time() - t_start
 
                         if response.status_code == 200:
@@ -215,7 +223,7 @@ if __name__ == "__main__":
                     except Exception as e:
                         st.error(f"Неожиданная ошибка: {str(e)}")
                 else:
-                    print('error')
+                    st.error(f"Ошибка generation_mode")
 
     with tab2:
         st.write('run tests')
