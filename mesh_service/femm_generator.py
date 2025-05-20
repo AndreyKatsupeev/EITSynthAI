@@ -4,6 +4,7 @@ import numpy as np
 from shapely.geometry import Polygon
 import shapely.errors
 import cv2
+import multiprocessing
 
 
 def divide_triangles_into_groups(contours, outer_contour_class):
@@ -51,34 +52,67 @@ def divide_triangles_into_groups(contours, outer_contour_class):
     # Loop over all elements
     for elem_type, tags, nodes in zip(elem_types, elem_tags, elem_node_tags):
         if elem_type == 2:  # Element type 2 corresponds to triangles
-            for i in range(len(tags)):
-                # Get triangle vertex coordinates
-                n1, n2, n3 = nodes[i * 3: (i + 1) * 3]
-                triangle = [node_dict[n1], node_dict[n2], node_dict[n3]]
-                max_intersection = 0
-                best_class = outer_contour_class
-                # Compare triangle with all contours
-                for j in range(len(contours)):
-                    contour_class = contours[j][0]
-                    contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
-                    contour_poly = Polygon(contour_points)
-                    try:
-                        intersection = Polygon(triangle).intersection(contour_poly).area
-                        if intersection > max_intersection:
-                            max_intersection = intersection
-                            best_class = contour_class
-                    except Exception as e:
-                        print(e)
-                        pass
-                # Assign triangle to the best matching class
+            task_args = [
+                (i, nodes, node_dict, tags, contours, outer_contour_class)
+                for i in range(len(tags))
+            ]
+            # Parallel execution
+            with multiprocessing.Pool() as pool:
+                results = pool.starmap(process_triangle, task_args)
+            for best_class, tag in results:
                 if best_class not in class_groups:
                     class_groups[best_class] = []
-                class_groups[best_class].append(tags[i])
+                class_groups[best_class].append(tag)
         # Create physical groups in Gmsh for each class
         for class_id, elements in class_groups.items():
             group = gmsh.model.addPhysicalGroup(2, elements)
             gmsh.model.setPhysicalName(2, group, f"Class_{class_id}")
     return class_groups
+
+def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class):
+    """
+            Determines the most appropriate class for a triangle based on maximum area of intersection with given contours.
+
+            For the triangle at index `i`, this function:
+            - Extracts its vertex coordinates using the `nodes` and `node_dict`.
+            - Constructs a triangle polygon.
+            - Compares it with each contour polygon to find the one with the largest intersection area.
+            - Assigns the triangle to the class of the best-matching contour.
+
+            Parameters:
+            -----------
+            i (int): Index of the triangle (0-based).
+            nodes (List[int]): Flat list of node indices, with 3 indices per triangle.
+            node_dict (Dict[int, Tuple[float, float]]): Mapping from node index to (x, y) coordinate.
+            tags (List[int]): List of triangle identifiers (e.g., element tags) indexed by triangle.
+            contours (List[List[float]]): List of contours, where each contour starts with a class label
+            followed by flat (x1, y1, x2, y2, ...) coordinates.
+            outer_contour_class (Any): Default class to assign if no intersection is found.
+
+            Returns:
+            --------
+            Tuple[Any, int]: A tuple containing:
+            - The class label assigned to the triangle.
+            - The original tag of the triangle from `tags[i]`.
+            """
+    # Get triangle vertex coordinates
+    n1, n2, n3 = nodes[i * 3: (i + 1) * 3]
+    triangle = [node_dict[n1], node_dict[n2], node_dict[n3]]
+    max_intersection = 0
+    best_class = outer_contour_class
+    # Compare triangle with all contours
+    for j in range(len(contours)):
+        contour_class = contours[j][0]
+        contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
+        contour_poly = Polygon(contour_points)
+        try:
+            intersection = Polygon(triangle).intersection(contour_poly).area
+            if intersection > max_intersection:
+                max_intersection = intersection
+                best_class = contour_class
+        except:
+            pass
+    return best_class, tags[i]
 
 
 def export_mesh_for_femm(filename, class_groups):
@@ -239,8 +273,7 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
                     pts_np = np.array(pts, dtype=np.int32)
                     cv2.fillPoly(img, [np.array(pts, dtype=np.int32)], class_colors[int(class_id)])
                     cv2.polylines(img, [pts_np], isClosed=True, color=(0, 0, 0), thickness=1)
-            except Exception as e:
-                print(e)
+            except:
                 pass  # sometimes getElement cannot find tag — leave it
 
     return img
