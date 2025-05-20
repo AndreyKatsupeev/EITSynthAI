@@ -5,6 +5,7 @@ from shapely.geometry import Polygon
 import shapely.errors
 import cv2
 import multiprocessing
+import time
 
 
 def divide_triangles_into_groups(contours, outer_contour_class):
@@ -38,11 +39,14 @@ def divide_triangles_into_groups(contours, outer_contour_class):
         """
     # Filter out short contours with fewer than 4 points (i.e., less than 9 values)
     k = -1
+    start_time = time.time()
     for i in range(len(contours)):
         k += 1
         if k <= len(contours) - 1 and len(contours[k]) < 9:
             contours.pop(k)
             k -= 1
+    end_time = time.time()
+    print(f"Noise removal time: {end_time - start_time:.6f} seconds")
     # Retrieve all 2D elements (triangles)
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
     # Get all mesh nodes and their coordinates
@@ -174,7 +178,7 @@ def export_mesh_for_femm(filename, class_groups):
         for n1, n2, n3, class_id in triangle_data:
             f.write(f"{n1} {n2} {n3} {class_id}\n")
 
-    print(f"Mesh exported to: {filename}")
+    print(f"Mesh exported to: {filename}, finite elements count - {len(triangle_data)}")
 
 
 def show_class(class_groups, class_for_showing=-1):
@@ -350,6 +354,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
     mesh_image = np.array([512, 512, 3])
     mesh_data = ''
     gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
     contours = []
     outer_contour = None
     outer_contour_class = None
