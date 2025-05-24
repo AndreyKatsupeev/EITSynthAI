@@ -37,6 +37,7 @@ def read_dicom_folder(folder_path):
             pass
     return series_dict
 
+
 def filter_arrays(array_list):
     # Создаем новый список, в который будем добавлять только массивы с размером 512x512
     filtered_list = [array for array in array_list if array.shape == (512, 512)]
@@ -115,6 +116,7 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
 
     return sagittal_view
 
+
 if __name__ == "__main__":
     global_count = 0
     for dicom_dir in tqdm(dicom_folders_name):
@@ -123,7 +125,8 @@ if __name__ == "__main__":
             try:
                 file_name = dicom_dir  # создаем новое имя файла для обезличивания
                 img_3d, patient_position, image_orientation, patient_orientation = convert_to_3d(i_slices)
-                sagittal_view = axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orientation)  # нарезка вертикальных срезов
+                sagittal_view = axial_to_sagittal(img_3d, patient_position, image_orientation,
+                                                  patient_orientation)  # нарезка вертикальных срезов
                 slice_mean = sagittal_view.shape[-1] // 2  # Вычисляем средний срез
                 for i in range(-3, 4):  # Берем диапазоны от среднего (Всего 13)
                     slise_save = sagittal_view[:, :, slice_mean + i]
@@ -135,9 +138,9 @@ if __name__ == "__main__":
                 # if global_count == 20:
                 #     exit()
 
-                    # cv2.namedWindow('sagittal_view', cv2.WINDOW_NORMAL)
-                    # cv2.imshow('sagittal_view', sagittal_view)
-                    # cv2.waitKey(0)
-                    # cv2.destroyAllWindows()
+                # cv2.namedWindow('sagittal_view', cv2.WINDOW_NORMAL)
+                # cv2.imshow('sagittal_view', sagittal_view)
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
             except:
                 print(file_name)
