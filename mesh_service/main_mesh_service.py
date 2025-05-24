@@ -1,7 +1,6 @@
 import cv2
 import logging
-import zipfile
-from io import BytesIO
+
 
 from fastapi import FastAPI, Response
 from .femm_generator import create_mesh
@@ -18,7 +17,8 @@ app = FastAPI()
 
 class MeshData(BaseModel):
     params: List[float]  # Первые два числа (0.682, 0.682)
-    polygons: List[str]   # Остальные строки с координатами
+    polygons: List[str]  # Остальные строки с координатами
+
 
 
 @app.post("/createMesh")
