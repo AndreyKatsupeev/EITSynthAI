@@ -275,6 +275,7 @@ class DICOMToMask(DICOMSequencesToMask):
     """
     Класс для обработки одиночного dicom-файла. Наследуется от класса DICOMSequencesToMask
     """
+
     def get_coordinate_slice_from_dicom_frame(self, zip_buffer, answer=None):
         """
         Основная функция для получения координат биологических тканей из одиночного dicom-файла
@@ -375,6 +376,7 @@ class NIIToMask(DICOMSequencesToMask):
     """
     Класс для сегментации КТ-серии в формате nii.  Наследуется от класса DICOMSequencesToMask.
     """
+
     def get_coordinate_slice_from_nii(self, zip_buffer, answer=None):
         """
         У nii файлов меньше срезов пачке, поэтому фронтальный срез не получается хорошего качества. При обработке nii
