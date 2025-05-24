@@ -28,21 +28,22 @@ def load_yolo(filepath):
                         y.append(int(val))
                         try:
                             if (x[-2], y[-2]) == (x[-1], y[-1]):
-                                del(x[-1])
-                                del(y[-1])
+                                del (x[-1])
+                                del (y[-1])
                         except:
                             pass
                 else:
                     tissue_type = val
             if len(x) != len(y):
                 raise ValueError(f'len(x) != len(y): {len(x)} != {len(y)}')
-            if len(x)>=3:
+            if len(x) >= 3:
                 if not tissue_type in borders:
                     borders[tissue_type] = []
                 borders[tissue_type].append([x, y])
     return borders
 
-def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50000, precision = 1e-8, depth = 10):
+
+def femm_create_problem(units='millimeters', problemtype='planar', freq=50000, precision=1e-8, depth=10):
     '''
     create new femm current flow problem
     Args:
@@ -54,8 +55,9 @@ def femm_create_problem(units = 'millimeters', problemtype = 'planar', freq = 50
     Returns:
     '''
     femm.openfemm()
-    femm.newdocument(3)#3 - current flow problem
+    femm.newdocument(3)  # 3 - current flow problem
     femm.ci_probdef(units, problemtype, freq, precision, depth)
+
 
 def femm_add_contour(coords_list):
     '''add closed countour by points coordinates
@@ -66,17 +68,18 @@ def femm_add_contour(coords_list):
     TODO: if multiple points lie on the same line - 
     ignore all points ignore all points except the first and last
     '''
-    coords = np.transpose(np.array([coords_list[0],coords_list[1]]))
+    coords = np.transpose(np.array([coords_list[0], coords_list[1]]))
     x0 = coords[0, 0]
     y0 = coords[0, 1]
-    for i in range(0,len(coords)):
-        x1 = coords[i-1, 0]
-        y1 = coords[i-1, 1]
+    for i in range(0, len(coords)):
+        x1 = coords[i - 1, 0]
+        y1 = coords[i - 1, 1]
         x2 = coords[i, 0]
         y2 = coords[i, 1]
         femm.ci_addnode(x2, y2)
         femm.ci_addsegment(x1, y1, x2, y2)
     femm.ci_addsegment(x0, y0, x2, y2)
+
 
 def test():
     ''''''
