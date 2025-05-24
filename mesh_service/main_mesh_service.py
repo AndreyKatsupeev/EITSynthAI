@@ -1,7 +1,6 @@
 import cv2
 import logging
-import zipfile
-from io import BytesIO
+
 
 from fastapi import FastAPI, Response
 from .femm_generator import create_mesh
@@ -15,9 +14,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI()
 
+
 class MeshData(BaseModel):
     params: List[float]  # Первые два числа (0.682, 0.682)
-    polygons: List[str]   # Остальные строки с координатами
+    polygons: List[str]  # Остальные строки с координатами
+
 
 @app.post("/createMesh")
 async def create_mesh_from_json(data: MeshData):
