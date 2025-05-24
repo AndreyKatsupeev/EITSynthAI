@@ -15,13 +15,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI()
 
+
 class MeshData(BaseModel):
     params: List[float]  # Первые два числа (0.682, 0.682)
     polygons: List[str]   # Остальные строки с координатами
 
+
 @app.post("/createMesh")
 async def create_mesh_from_json(data: MeshData):
-    """"""
+    """
+
+    :param data:
+    :return:
+    """
     try:
         # Разбираем входные данные
         pixel_spacing = data.params[:2]
@@ -35,4 +41,5 @@ async def create_mesh_from_json(data: MeshData):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+    # this line of code is unreachable
     return answer

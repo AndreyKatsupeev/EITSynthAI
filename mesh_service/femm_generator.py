@@ -4,6 +4,8 @@ import numpy as np
 from shapely.geometry import Polygon
 import shapely.errors
 import cv2
+import multiprocessing
+import time
 
 
 def divide_triangles_into_groups(contours, outer_contour_class):
@@ -37,11 +39,14 @@ def divide_triangles_into_groups(contours, outer_contour_class):
         """
     # Filter out short contours with fewer than 4 points (i.e., less than 9 values)
     k = -1
+    start_time = time.time()
     for i in range(len(contours)):
         k += 1
         if k <= len(contours) - 1 and len(contours[k]) < 9:
             contours.pop(k)
             k -= 1
+    end_time = time.time()
+    print(f"Noise removal time: {end_time - start_time:.6f} seconds")
     # Retrieve all 2D elements (triangles)
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
     # Get all mesh nodes and their coordinates
@@ -51,33 +56,67 @@ def divide_triangles_into_groups(contours, outer_contour_class):
     # Loop over all elements
     for elem_type, tags, nodes in zip(elem_types, elem_tags, elem_node_tags):
         if elem_type == 2:  # Element type 2 corresponds to triangles
-            for i in range(len(tags)):
-                # Get triangle vertex coordinates
-                n1, n2, n3 = nodes[i * 3: (i + 1) * 3]
-                triangle = [node_dict[n1], node_dict[n2], node_dict[n3]]
-                max_intersection = 0
-                best_class = outer_contour_class
-                # Compare triangle with all contours
-                for j in range(len(contours)):
-                    contour_class = contours[j][0]
-                    contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
-                    contour_poly = Polygon(contour_points)
-                    try:
-                        intersection = Polygon(triangle).intersection(contour_poly).area
-                        if intersection > max_intersection:
-                            max_intersection = intersection
-                            best_class = contour_class
-                    except:
-                        pass
-                # Assign triangle to the best matching class
+            task_args = [
+                (i, nodes, node_dict, tags, contours, outer_contour_class)
+                for i in range(len(tags))
+            ]
+            # Parallel execution
+            with multiprocessing.Pool() as pool:
+                results = pool.starmap(process_triangle, task_args)
+            for best_class, tag in results:
                 if best_class not in class_groups:
                     class_groups[best_class] = []
-                class_groups[best_class].append(tags[i])
+                class_groups[best_class].append(tag)
         # Create physical groups in Gmsh for each class
         for class_id, elements in class_groups.items():
             group = gmsh.model.addPhysicalGroup(2, elements)
             gmsh.model.setPhysicalName(2, group, f"Class_{class_id}")
     return class_groups
+
+def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class):
+    """
+            Determines the most appropriate class for a triangle based on maximum area of intersection with given contours.
+
+            For the triangle at index `i`, this function:
+            - Extracts its vertex coordinates using the `nodes` and `node_dict`.
+            - Constructs a triangle polygon.
+            - Compares it with each contour polygon to find the one with the largest intersection area.
+            - Assigns the triangle to the class of the best-matching contour.
+
+            Parameters:
+            -----------
+            i (int): Index of the triangle (0-based).
+            nodes (List[int]): Flat list of node indices, with 3 indices per triangle.
+            node_dict (Dict[int, Tuple[float, float]]): Mapping from node index to (x, y) coordinate.
+            tags (List[int]): List of triangle identifiers (e.g., element tags) indexed by triangle.
+            contours (List[List[float]]): List of contours, where each contour starts with a class label
+            followed by flat (x1, y1, x2, y2, ...) coordinates.
+            outer_contour_class (Any): Default class to assign if no intersection is found.
+
+            Returns:
+            --------
+            Tuple[Any, int]: A tuple containing:
+            - The class label assigned to the triangle.
+            - The original tag of the triangle from `tags[i]`.
+            """
+    # Get triangle vertex coordinates
+    n1, n2, n3 = nodes[i * 3: (i + 1) * 3]
+    triangle = [node_dict[n1], node_dict[n2], node_dict[n3]]
+    max_intersection = 0
+    best_class = outer_contour_class
+    # Compare triangle with all contours
+    for j in range(len(contours)):
+        contour_class = contours[j][0]
+        contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
+        contour_poly = Polygon(contour_points)
+        try:
+            intersection = Polygon(triangle).intersection(contour_poly).area
+            if intersection > max_intersection:
+                max_intersection = intersection
+                best_class = contour_class
+        except:
+            pass
+    return best_class, tags[i]
 
 
 def export_mesh_for_femm(filename, class_groups):
@@ -139,7 +178,7 @@ def export_mesh_for_femm(filename, class_groups):
         for n1, n2, n3, class_id in triangle_data:
             f.write(f"{n1} {n2} {n3} {class_id}\n")
 
-    print(f"Mesh exported to: {filename}")
+    print(f"Mesh exported to: {filename}, finite elements count - {len(triangle_data)}")
 
 
 def show_class(class_groups, class_for_showing=-1):
@@ -207,16 +246,16 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     width, height = image_size
     img = np.zeros((height, width, 3), dtype=np.uint8)
 
-    nodeTags, nodeCoords, _ = gmsh.model.mesh.getNodes()
+    node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
     # Dict {nodeTag: (x, y)}
-    node_coords = {
-        tag: (nodeCoords[i], nodeCoords[i + 1])
-        for tag, i in zip(nodeTags, range(0, len(nodeCoords), 3))
+    node_coordinates = {
+        tag: (node_coords[i], node_coords[i + 1])
+        for tag, i in zip(node_tags, range(0, len(node_coords), 3))
     }
 
-    all_coords = np.array(list(node_coords.values()))
-    min_x, min_y = all_coords.min(axis=0)
-    max_x, max_y = all_coords.max(axis=0)
+    all_coordinates = np.array(list(node_coordinates.values()))
+    min_x, min_y = all_coordinates.min(axis=0)
+    max_x, max_y = all_coordinates.max(axis=0)
 
     def to_pixel(x, y):
         px = int((x - min_x) / (max_x - min_x) * (width - 2 * margin) + margin)
@@ -229,11 +268,11 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     for class_id, element_tags in class_groups.items():
         for tag in element_tags:
             try:
-                elementType, nodeTagList, _, _ = gmsh.model.mesh.getElement(tag)
-                num_nodes = gmsh.model.mesh.getElementProperties(elementType)[3]
+                element_type, node_tag_list, _, _ = gmsh.model.mesh.getElement(tag)
+                num_nodes = gmsh.model.mesh.getElementProperties(element_type)[3]
                 # Dividing nodeTagList in elements with needed nodes count
-                for i in range(0, len(nodeTagList), num_nodes):
-                    nodes = nodeTagList[i:i + num_nodes]
+                for i in range(0, len(node_tag_list), num_nodes):
+                    nodes = node_tag_list[i:i + num_nodes]
                     pts = [to_pixel(*node_coords[n]) for n in nodes]
                     pts_np = np.array(pts, dtype=np.int32)
                     cv2.fillPoly(img, [np.array(pts, dtype=np.int32)], class_colors[int(class_id)])
@@ -244,9 +283,9 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     return img
 
 
-def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInnerContours=False,
+def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_inner_contours=False,
                 show_meshing_result_method="opencv",
-                number_of_showed_class=-1, isExportingToFemm=True, export_filename=None):
+                number_of_showed_class=-1, is_exporting_to_femm=True, export_filename=None):
     """
     Creates a 2D triangular mesh from contour data and optionally exports or visualizes it.
 
@@ -265,7 +304,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
     distance_threshold : float, optional (default=1.3)
         Distance threshold used when merging collinear segments in the contour.
 
-    isShowInnerContours : bool, optional (default=False)
+    is_show_inner_contours : bool, optional (default=False)
         If True, all inner contours (not just the outer boundary) will be shown and meshed.
         If False, only the outermost contour is used for geometry creation.
 
@@ -315,6 +354,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
     mesh_image = np.array([512, 512, 3])
     mesh_data = ''
     gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
     contours = []
     outer_contour = None
     outer_contour_class = None
@@ -326,7 +366,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
         if k != outer_segment:
             contours.append(area)
         area = [area[0]] + merge_collinear_segments(area[1:], distance_threshold)
-        if k == outer_segment or isShowInnerContours:
+        if k == outer_segment or is_show_inner_contours:
             for i in range(1, len(area) - 1):
                 if i % 2:
                     geometry_points.append(gmsh.model.geo.add_point(area[i], area[i + 1], 0, lc))
@@ -350,9 +390,9 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, isShowInn
         show_class(class_groups, number_of_showed_class)
     elif show_meshing_result_method == "opencv":
         img = get_image(class_groups)
-    if isExportingToFemm and export_filename is not None:
+    if is_exporting_to_femm and export_filename is not None:
         export_mesh_for_femm(export_filename, class_groups)
-    # It finalize the Gmsh API
+    # It finalizes the Gmsh API
     gmsh.finalize()
     return img
 
@@ -576,7 +616,7 @@ def test_module():
                 7,
                 1.3, True,
                 show_meshing_result_method="opencv",
-                isExportingToFemm=True,
+                is_exporting_to_femm=True,
                 export_filename="tmp.txt")
 
 

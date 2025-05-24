@@ -16,13 +16,11 @@ coordinates = [
 ]
 
 # Преобразуем координаты в список кортежей (x, y)
-points = [(int(coordinates[i]), int(coordinates[i+1])) for i in range(0, len(coordinates), 2)]
+points = [(int(coordinates[i]), int(coordinates[i + 1])) for i in range(0, len(coordinates), 2)]
 
 # Рисуем линии между точками
 for i in range(len(points) - 1):
     cv2.line(image, points[i], points[i+1], (255, 255, 255), thickness=1)
-
-
 
     # Показываем изображение
     cv2.namedWindow('Image', cv2.WINDOW_NORMAL)

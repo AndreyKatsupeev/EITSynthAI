@@ -28,7 +28,6 @@ hu_ranges = {
 }
 
 
-
 def show_frontal_slices(volume, window_level=40, window_width=400):
     """
     Корректно отображает фронтальные (корональные) срезы из NIfTI-файла.
@@ -88,6 +87,7 @@ def classic_norm(volume, window_level=40, window_width=400):
     clipped = np.clip(volume, hu_min, hu_max)
     normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(np.uint8)
     return normalized
+
 
 def get_only_body_mask(hu_img):
     """

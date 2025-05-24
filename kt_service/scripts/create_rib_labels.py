@@ -15,10 +15,12 @@ save_folder = "save"
 # Создаем папку для сохранения, если она не существует
 os.makedirs(save_folder, exist_ok=True)
 
+
 def check_work_folders(path):
     if not os.path.exists(path):
         os.makedirs(path)
         print("Created save directories")
+
 
 def polygon_to_str(arr):
     """
@@ -36,6 +38,7 @@ def polygon_to_str(arr):
     # Преобразуем в строку
     result_str = ' '.join(map(str, result))
     return result_str
+
 
 check_work_folders('images')
 check_work_folders('labels')
@@ -75,8 +78,8 @@ for image_name in os.listdir(image_folder):
                             with open(f'labels/{image_name_clear}.txt', "a") as file:
                                 file.seek(0, 2)  # перемещение курсора в конец файла
                                 file.write(f'{coord_norm}' "\n")  # собственно, запись
-        except:
-            print('no detections', image_name)
+        except Exception as e:
+            print('no detections', image_name, "Error:", e)
 
         # print(result.masks.xyn)
         # exit()

@@ -15,7 +15,6 @@ runs
 *.csv
 .pytest_cache
 config.json
-/models
 
 env
 .python-version
@@ -66,7 +65,6 @@ wandb
 *train
 *dataset
 *logs
-*tests
 *train
 *uploads
 *video
