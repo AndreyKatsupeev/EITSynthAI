@@ -1,19 +1,20 @@
-import torch
+import base64
 import cv2
-from collections import defaultdict
 import logging
+import nibabel as nib
 import numpy
+import os
 import pydicom
 import supervision as sv
-from scipy.ndimage import label
-from pydicom.filebase import DicomBytesIO
-import base64
-from PIL import Image
-from fastapi.responses import JSONResponse
-import nibabel as nib
 import tempfile
-import os
+import torch
+
 from io import BytesIO
+from collections import defaultdict
+from fastapi.responses import JSONResponse
+from pydicom.filebase import DicomBytesIO
+from PIL import Image
+from scipy.ndimage import label
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -29,9 +30,9 @@ def create_dicom_dict(zip_file):
         zip_file: Объект ZipFile с DICOM файлами
 
     Returns:
-        tuple: (list_of_dicom_slices, custom_input)
-               где list_of_dicom_slices - список DICOM объектов,
-               custom_input - содержимое файла custom_input.txt или None
+        largest_series: Серия, с наибольшим количеством срезов (для исключения одиночных серий)
+        custom_input: число для кастомной настройки среза. Если его нет в zip_file, устанавливается 0
+
     """
     series_dict = defaultdict(list)
     custom_input = None
@@ -62,17 +63,6 @@ def create_dicom_dict(zip_file):
     return largest_series, int(custom_input)
 
 
-def create_image_dict(zip_file):
-    """
-
-    """
-    series_dict = defaultdict(list)
-    custom_input = None
-
-    largest_series = max(series_dict.values(), key=len)
-    return largest_series
-
-
 def convert_to_3d(slices):
     """
     Преобразование срезов в 3D-массив
@@ -82,25 +72,27 @@ def convert_to_3d(slices):
         FFP - Feet First Prone (Ноги вперед, пронированное положение)
         HFP - Head First Prone (Голова вперед, пронированное положение)
     Данный параметр затем используется для определения ориентации среза, чтобы на картинке не было тела вверх ногами.
-    :param slices: список срезов с метаинформацией
-    :return:
+
+    param
+        slices: список срезов с метаинформацией
+
+    return:
+       img_3d: массив ненормализованных срезов в формате numpy
+       patient_position: Позиция пациента
+       image_orientation: Ориентация изображения
+       patient_orientation: Ориентация пациента
+
     """
-    # for i in slices:
-    #     print(slices[(0x0020, 0x0032)])
     # Сортировка срезов по положению (при необходимости)
     slices.sort(key=lambda x: int(x.InstanceNumber))
     # Извлечение массива пиксельных данных
     pixel_data = [slice_dicom.pixel_array for slice_dicom in slices]
-    # print(len(pixel_data), '1')
-    # pixel_data = filter_arrays(pixel_data)
-    # print(len(pixel_data),'2')
     # Получение позиции пациента
     patient_position = slices[0][0x0018, 0x5100].value
     image_orientation = slices[0][0x0020, 0x0037].value  # Ориентация изображения (6 чисел)
     try:
         patient_orientation = slices[0][0x0020, 0x0020].value  # Ориентация пациента (например, A\P)
-    except Exception as e:
-        print(e)
+    except:
         patient_orientation = None
     # Стекирование в 3D-массив
     img_3d = numpy.stack(pixel_data,
@@ -110,14 +102,17 @@ def convert_to_3d(slices):
 
 def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orientation):
     """
-    Преобразует 3D-изображение из аксиальной плоскости в сагиттальную с учетом ориентации пациента.
+    Функция преобразует 3D-изображение из аксиальной плоскости в сагиттальную (фронтальную) с учетом ориентации пациента
 
-    :param img_3d: 3D-массив (аксиальные срезы)
-    :param ds: DICOM dataset (содержит метаданные, включая PatientPosition, ImageOrientationPatient и PatientOrientation)
-    :return: 3D-массив в сагиттальной плоскости
+    Args:
+        img_3d: 3D-массив (аксиальные срезы)
+        patient_position: позиция пациента
+        image_orientation: ориентация изображения
+        patient_orientation: ориентация пациента
+
+    Returns:
+        sagittal_view: Набор фронтальных срезов без нормализации
     """
-    sagittal_view = None
-    patient_position = 'FFS'
     # Перестановка осей для преобразования аксиального в сагиттальный вид
     if patient_position == 'FFS':
         sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
@@ -151,8 +146,10 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
 
 def search_number_axial_slice(detections, custom_number_slise=0, image_width=512):
     """
-
-    Detections(xyxy=array([[     100.45,      109.37,      116.43,      129.18],
+    Функция для поиска номера необходимого аксиального среза серии
+        Args:
+    :param detections:
+        Detections(xyxy=array([[     100.45,      109.37,      116.43,      129.18],
        [     412.88,      162.68,      426.44,      182.76],
        [     90.846,      146.93,      105.72,      168.55],
        [     67.141,      236.86,      82.394,      262.65],
@@ -224,40 +221,149 @@ def search_number_axial_slice(detections, custom_number_slise=0, image_width=512
        data={'class_name': array(['rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib',
        'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib', 'rib'],
        dtype='<U3')}, metadata={})
+        image_width: ширина изображения
+        custom_number_slise: параметр используется, когда выбран режим ручной коррекции выбора среза
     """
     number_axial_slice_list = []
+    # Получаем абсолютные координаты среза
     coordinates = detections.xyxy
+    # Находим середину изображения
     midpoint = image_width / 2
     # Фильтрация координат, оставляем только те, что правее середины
     right_side_coordinates = [box for box in coordinates if box[0] > midpoint]
     # Сортировка по оси Y (по второму элементу каждого бокса)
     sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
+    # Вычисляем номер среза между 6 и 7 ребром (нумерация рёбер с нуля)
     number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
+    # На всякий получаем номер шестого ребра
     number_axial_slice_list.append(int(sorted_right_side_coordinates[5][1]))
+    # На всякий получаем номер седьмого ребра
     number_axial_slice_list.append(int(sorted_right_side_coordinates[6][1]))
-    number_axial_slice_list.append(number_axial_slice+custom_number_slise)
+    # Корректируем номер среза между 6 и 7 ребром, если выбран режим с коррекцией. Иначе прибавляется 0
+    number_axial_slice_list.append(number_axial_slice + custom_number_slise)
     return number_axial_slice_list
 
 
 def classic_norm(volume, window_level=40, window_width=400):
-    """"""
-    # Нормализация HU
+    """
+    Нормализует медицинское изображение (обычно КТ) в диапазон [0, 255] с использованием заданного окна.
+
+    Функция выполняет три основных шага:
+    1. Обрезает значения интенсивности пикселей по заданному окну (window level/width)
+    2. Нормализует обрезанные значения в диапазон [0, 255]
+    3. Поворачивает изображение на 180 градусов (стандартная практика для медицинских изображений)
+
+    Args:
+        volume (numpy.ndarray): 3D-массив с исходными данными КТ в единицах Хаунсфилда (HU)
+        window_level (int, optional): Центр окна нормализации в HU. По умолчанию 40 (окно мягких тканей)
+        window_width (int, optional): Ширина окна нормализации в HU. По умолчанию 400
+
+    Returns:
+        numpy.ndarray: Нормализованное 8-битное изображение (значения от 0 до 255) типа uint8
+
+    Note:
+        Стандартные окна для КТ:
+        - Легкие: level=-600, width=1500
+        - Мягкие ткани: level=40, width=400
+        - Костная ткань: level=400, width=2000
+    """
+    # Вычисляем границы окна нормализации
     hu_min = window_level - window_width // 2
     hu_max = window_level + window_width // 2
+
+    # Обрезаем значения за пределами окна
     clipped = numpy.clip(volume, hu_min, hu_max)
+
+    # Линейно нормализуем в диапазон [0, 255] и преобразуем в 8-битный формат
     normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(numpy.uint8)
+
+    # Поворачиваем изображение на 180 градусов (стандартная практика в радиологии)
     normalized = cv2.rotate(normalized, cv2.ROTATE_180)
+
     return normalized
 
 
 def draw_annotate(ribs_detections, front_slice, axial_slice_list_numbers):
-    """"""
+    """
+    Визуализирует обнаруженные рёбра на фронтальном срезе КТ с аннотациями.
+
+    Функция выполняет:
+    1. Рисует bounding boxes вокруг обнаруженных рёбер
+    2. Добавляет горизонтальную линию-маркер уровня среза
+    3. Фильтрует и нумерует левые рёбра (отсортированные сверху вниз)
+    4. Возвращает аннотированное изображение в цветном формате
+
+    Args:
+        ribs_detections (sv.Detections): Объект с обнаружениями рёбер (содержит bounding boxes)
+        front_slice (numpy.ndarray): Фронтальный срез КТ в градациях серого
+        axial_slice_list_numbers (list): Список координат срезов для отображения маркера уровня
+
+    Returns:
+        numpy.ndarray: Цветное изображение с аннотациями (BGR формат)
+
+    Note:
+        - Левыми считаются рёбра, чей центр находится правее середины изображения
+        - Нумерация рёбер идёт сверху вниз (1 - самое верхнее левое ребро)
+        - Используется синий цвет для bounding boxes и зелёный для линии-маркера
+    """
+    # Инициализируем аннотатор bounding boxes (синий цвет)
     box_annotator = sv.BoxAnnotator(color=sv.Color.BLUE)
+
+    # Создаем копию исходного изображения и конвертируем в BGR для цветных аннотаций
     annotated_image = front_slice.copy()
     annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
-    annotated_image = box_annotator.annotate(annotated_image, detections=ribs_detections)
-    annotated_image = cv2.line(annotated_image, (0, axial_slice_list_numbers[-1]), (1000, axial_slice_list_numbers[-1]),
-                               (0, 0, 255), 1)
+
+    # 1. Рисуем bounding boxes для всех обнаруженных рёбер
+    annotated_image = box_annotator.annotate(
+        scene=annotated_image,
+        detections=ribs_detections
+    )
+
+    # 2. Добавляем горизонтальную зелёную линию - маркер уровня аксиального среза
+    last_slice_pos = axial_slice_list_numbers[-1]  # Позиция последнего среза
+    annotated_image = cv2.line(
+        img=annotated_image,
+        pt1=(0, last_slice_pos),  # Начало линии (левая граница)
+        pt2=(1000, last_slice_pos),  # Конец линии (правая граница)
+        color=(0, 255, 0),  # Зелёный цвет
+        thickness=1
+    )
+
+    # 3. Фильтрация и нумерация левых рёбер
+    boxes = ribs_detections.xyxy  # Получаем координаты всех bounding boxes
+    mid_x = annotated_image.shape[1] // 2  # Вычисляем середину изображения по X
+
+    # Фильтруем только левые рёбра (центр bbox'а правее середины)
+    left_boxes = []
+    for box in boxes:
+        x1, y1, x2, y2 = box
+        center_x = (x1 + x2) / 2
+        if center_x > mid_x:  # Критерий для левых рёбер
+            left_boxes.append(box)
+
+    left_boxes = numpy.array(left_boxes)  # Конвертируем в numpy array
+
+    # Сортируем левые рёбра по Y-координате (от верхних к нижним)
+    sorted_indices = numpy.argsort(left_boxes[:, 1])
+    sorted_left_boxes = left_boxes[sorted_indices]
+
+    # 4. Нумеруем отсортированные левые рёбра (1 - самое верхнее)
+    for i, box in enumerate(sorted_left_boxes, start=1):
+        x1, y1, x2, y2 = box
+        # Позиция текста - справа от bounding box (+5 пикселей от правой границы)
+        text_position = (int(x2) + 5, int(y2 - 2))
+
+        # Рисуем номер ребра (дважды для лучшей видимости)
+        cv2.putText(
+            img=annotated_image,
+            text=str(i),
+            org=text_position,
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=0.4,
+            color=(255, 0, 0),  # Синий цвет
+            thickness=1
+        )
+
     return annotated_image
 
 
@@ -300,16 +406,47 @@ def overlay_segmentation_masks(segmentation_dict):
 
 
 def create_segmentations_masks(axial_segmentations, img_size=512):
+    """
+    Создает цветные маски сегментации для разных типов тканей из результатов YOLO модели.
+
+    Функция преобразует выходные данные модели сегментации в набор цветных масок,
+    где каждый тип ткани представлен своим цветом. Возвращает словарь с отдельными
+    изображениями для каждого класса.
+
+    Args:
+        axial_segmentations (ultralytics.yolo.engine.results.Results):
+            Результаты работы YOLO модели сегментации, содержащие:
+            - masks: тензоры с масками сегментации
+            - boxes: координаты bounding boxes и классы объектов
+        img_size (int, optional): Размер выходных изображений. По умолчанию 512.
+
+    Returns:
+        dict: Словарь с цветными масками для каждого класса тканей, где ключи:
+            - "bone" - костная ткань (белый цвет)
+            - "muscles" - мышечная ткань (красный цвет)
+            - "lung" - легочная ткань (голубой цвет)
+            - "adipose" - жировая ткань (желтый цвет)
+        Каждая маска представляет собой numpy.ndarray формата (H, W, 3) dtype uint8.
+
+    Note:
+        - Предполагается определенное соответствие между class_id и типами тканей:
+            0: костная, 1: мышечная, 2: легочная, 3: жировая
+        - Если модель возвращает неизвестные class_id, они игнорируются
+        - Для визуализации используются полупрозрачные цвета
+    """
+    # Цветовая схема для разных типов тканей (BGR формат)
     clrs = {
-        "adipose": (0, 255, 255),
-        "bone": (255, 255, 255),
-        "muscles": (0, 0, 255),
-        "lung": (255, 255, 0)
+        "adipose": (0, 255, 255),  # Желтый для жировой ткани
+        "bone": (255, 255, 255),  # Белый для костной ткани
+        "muscles": (0, 0, 255),  # Красный для мышечной ткани
+        "lung": (255, 255, 0)  # Голубой для легочной ткани
     }
+
     # Получаем данные из результатов YOLO
-    mask_coords_list = axial_segmentations.masks.data  # Координаты масок
-    class_ids = axial_segmentations.boxes.cls.cpu().numpy()  # Классы
-    # Создаем словарь для хранения изображений по классам
+    mask_coords_list = axial_segmentations.masks.data  # Тензоры с координатами масок
+    class_ids = axial_segmentations.boxes.cls.cpu().numpy()  # ID классов в numpy массиве
+
+    # Инициализируем словарь для хранения масок по классам
     class_images = {
         "bone": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
         "muscles": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
@@ -317,15 +454,16 @@ def create_segmentations_masks(axial_segmentations, img_size=512):
         "adipose": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
     }
 
-    # Обрабатываем каждую маску
+    # Обрабатываем каждую маску в результатах
     for i, mask in enumerate(mask_coords_list):
-        # Перемещаем тензор на CPU и преобразуем в NumPy массив
+        # Конвертируем тензор маски в numpy array (если это тензор)
         if torch.is_tensor(mask):
             mask = mask.cpu().numpy()
 
-        class_id = class_ids[i]
+        # Получаем class_id для текущей маски
+        class_id = int(class_ids[i])  # Приводим к int для безопасности
 
-        # Определяем имя класса
+        # Определяем имя класса по его ID
         if class_id == 0:
             class_name = "bone"
         elif class_id == 1:
@@ -335,17 +473,18 @@ def create_segmentations_masks(axial_segmentations, img_size=512):
         elif class_id == 3:
             class_name = "adipose"
         else:
-            continue  # пропускаем неизвестные классы
+            continue  # Пропускаем неизвестные классы
 
         # Получаем цвет для текущего класса
         color = clrs[class_name]
 
-        # Создаем маску в формате (H, W, 3)
+        # Создаем цветную маску (3-канальное изображение)
         colored_mask = numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
-        # Применяем цвет там, где маска не равна 0
+        # Закрашиваем область маски соответствующим цветом
         colored_mask[mask > 0] = color
 
         # Добавляем маску к соответствующему изображению класса
+        # Используем cv2.add для корректного сложения изображений
         class_images[class_name] = cv2.add(class_images[class_name], colored_mask)
 
     return class_images
@@ -353,40 +492,62 @@ def create_segmentations_masks(axial_segmentations, img_size=512):
 
 def get_axial_slice_body_mask(ds):
     """
-    Функция для поиска маски среза тела
+    Создает бинарную маску тела пациента, удаляя артефакты (стол КТ-аппарата и другие объекты).
 
-    Функция предназначена для отсечения посторонних предметов из среза КТ. Очень часто в срез попадает стол аппарата.
-    Этот метод отсекает все меленькие маски и оставляет самую большую - тело.
+    Алгоритм работы:
+    1. Преобразует DICOM-изображение в значения HU (единицы Хаунсфилда)
+    2. Создает предварительную маску, используя типичные HU-значения тканей тела
+    3. Применяет морфологические операции для очистки маски
+    4. Находит контур наибольшей области (тело пациента) и отбрасывает все остальные
 
     Args:
-        hu_img: изображение 512х512, содержащее HU-коэффициенты
+        ds (pydicom.dataset.FileDataset): DICOM-срез с метаданными и пиксельными данными
 
     Returns:
-        only_body_mask: cv2.image
+        numpy.ndarray: Бинарная маска тела (255 - тело, 0 - фон) в формате uint8
 
+    Note:
+        - Использует диапазон HU [-500, 1000] для выделения тканей тела
+        - Предполагается, что тело пациента - самый большой connected component на срезе
+        - Изображение переворачивается по вертикали (flipud) для корректной ориентации
     """
 
+    # Получаем и переворачиваем изображение (стандартная практика для DICOM)
     new_image = ds.pixel_array
-    new_image = numpy.flipud(new_image)
+    new_image = numpy.flipud(new_image)  # Отражаем по вертикали для правильной ориентации
+
+    # Получаем параметры для преобразования в HU
     rescale_intercept = get_rescale_intercept(ds)
     rescale_slope = get_rescale_slope(ds)
+
+    # Преобразуем в единицы Хаунсфилда (HU)
     hu_img = numpy.vectorize(get_hu, excluded=['rescale_intercept', 'rescale_slope']) \
-        (new_image, rescale_intercept, rescale_slope).astype(
-        numpy.int16)  # Используем int16, чтобы сохранить диапазон HU
+        (new_image, rescale_intercept, rescale_slope).astype(numpy.int16)  # int16 для сохранения всего диапазона HU
 
+    # Создаем ядро для морфологических операций (5x5 пикселей)
     kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
-    only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
-    only_body_mask = only_body_mask.astype(numpy.uint8)
 
+    # Создаем предварительную маску: 1 для пикселей в диапазоне HU тела, 0 для остальных
+    only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
+    only_body_mask = only_body_mask.astype(numpy.uint8)  # Конвертируем в 8-битный формат
+
+    # Морфологическое открытие (эрозия + дилатация) для удаления мелких артефактов
     only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
 
+    # Находим все контуры на бинарном изображении
     contours, hierarchy = cv2.findContours(only_body_mask,
-                                           cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                                           cv2.RETR_EXTERNAL,  # Только внешние контуры
+                                           cv2.CHAIN_APPROX_NONE)  # Сохраняем все точки контура
+
+    # Выбираем контур с максимальной площадью (предполагая, что это тело пациента)
     max_contour = max(contours, key=cv2.contourArea, default=None)
+
     if max_contour is not None:
+        # Создаем чистую маску и рисуем на ней только максимальный контур
         only_body_mask = numpy.zeros_like(only_body_mask)
-    cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)
-    return only_body_mask
+        cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)  # -1 означает заливку контура
+
+    return only_body_mask  # Возвращаем маску (255 - тело, 0 - фон)
 
 
 def get_axial_slice_body_mask_nii(hu_img):
@@ -644,8 +805,8 @@ def overlay_masks_with_transparency(base_image, color_mask, alpha=0.8):
 
 
 def create_segmentation_masks_full_image(segmentation_masks_image=None, only_body_mask=None,
-                                       ribs_annotated_image=None, axial_slice_norm_body=None,
-                                       img_mesh=None):
+                                         ribs_annotated_image=None, axial_slice_norm_body=None,
+                                         img_mesh=None):
     """
     Создает комбинированное изображение из доступных масок и аннотаций.
     Если какой-то из аргументов пустой (None или пустой массив), он пропускается.
@@ -789,7 +950,6 @@ def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segme
     Args:
         segmentation_masks_full_image: изображение (numpy array)
         segmentation_results_cnt: текстовые данные (str)
-        segmentation_time
 
     Returns:
         dict: словарь с ответом, содержащим изображение в base64 и текст
@@ -885,36 +1045,72 @@ def get_pixel_spacing(dicom_data):
 
 
 def create_list_crd_from_color_output(color_output, pixel_spacing):
-    # Цвета масок и соответствующие классы
+    """
+    Преобразует цветную маску сегментации в список координат полигонов для каждого класса.
+
+    Функция выполняет:
+    1. Конвертацию цветового пространства (RGB -> BGR)
+    2. Поиск контуров для каждого класса по цвету
+    3. Упрощение контуров (аппроксимацию)
+    4. Проверку замкнутости контуров
+    5. Формирование строк с координатами в заданном формате
+
+    Args:
+        color_output (numpy.ndarray): Цветное изображение маски сегментации (RGB)
+                                     Формат: (H, W, 3), dtype: uint8
+        pixel_spacing (tuple): Размер пикселя в мм (spacing_x, spacing_y)
+
+    Returns:
+        list: Список строк в формате:
+            - Первые два элемента: spacing_x и spacing_y (в мм)
+            - Последующие элементы: строки полигонов в формате "class_id x1 y1 x2 y2 ..."
+
+    Note:
+        - Соответствие цветов и классов:
+          (0,255,255) -> "3" (жировая ткань)
+          (255,255,255) -> "0" (костная ткань)
+          (0,0,255) -> "1" (мышечная ткань)
+          (255,255,0) -> "2" (легочная ткань)
+        - Контуры упрощаются с точностью 0.5% от длины контура
+        - Не замкнутые контуры автоматически замыкаются
+    """
+    # Соответствие цветов (RGB) и идентификаторов классов
     color_class_map = {
-        (0, 255, 255): "3",
-        (255, 255, 255): "0",
-        (0, 0, 255): "1",
-        (255, 255, 0): "2"
+        (0, 255, 255): "3",  # Желтый -> класс 3 (жировая ткань)
+        (255, 255, 255): "0",  # Белый -> класс 0 (костная ткань)
+        (0, 0, 255): "1",  # Красный -> класс 1 (мышечная ткань)
+        (255, 255, 0): "2"  # Голубой -> класс 2 (легочная ткань)
     }
 
-    result = []
+    result = []  # Итоговый список координат
 
-    # Конвертируем в BGR, если изображение в RGB
+    # Конвертируем изображение в BGR (для корректной работы cv2.inRange)
     img = cv2.cvtColor(color_output, cv2.COLOR_RGB2BGR)
 
+    # Обрабатываем каждый цвет/класс
     for color, class_name in color_class_map.items():
-        # Создаем маску для текущего цвета (в порядке BGR для OpenCV)
-        bgr_color = color[::-1]  # конвертируем RGB в BGR
-        lower = numpy.array(bgr_color, dtype=numpy.uint8)
-        upper = numpy.array(bgr_color, dtype=numpy.uint8)
+        # Подготавливаем цвет для OpenCV (конвертируем RGB в BGR)
+        bgr_color = color[::-1]  # Инвертируем порядок каналов
+
+        # Создаем маску для текущего цвета
+        lower = upper = numpy.array(bgr_color, dtype=numpy.uint8)
         mask = cv2.inRange(img, lower, upper)
 
-        # Находим контуры
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Находим контуры на маске (только внешние контуры)
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,  # Только внешние контуры
+            cv2.CHAIN_APPROX_SIMPLE  # Упрощенное представление контуров
+        )
 
+        # Обрабатываем каждый найденный контур
         for cnt in contours:
             # Упрощаем контур (уменьшаем количество точек)
-            epsilon = 0.005 * cv2.arcLength(cnt, True)
+            epsilon = 0.005 * cv2.arcLength(cnt, True)  # Точность 0.5%
             approx = cv2.approxPolyDP(cnt, epsilon, True)
 
             # Проверяем замкнутость контура
-            if len(approx) > 2:
+            if len(approx) > 2:  # Контур должен содержать минимум 3 точки
                 first_point = approx[0][0]
                 last_point = approx[-1][0]
 
@@ -926,7 +1122,9 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
             points_str = " ".join([f"{p[0][0]} {p[0][1]}" for p in approx])
             polygon_str = f"{class_name} {points_str}"
             result.append(polygon_str)
-    result.insert(0, str(pixel_spacing[1]))
-    result.insert(0, str(pixel_spacing[0]))
+
+    # Добавляем значения pixel_spacing в начало списка
+    result.insert(0, str(pixel_spacing[1]))  # spacing_y
+    result.insert(0, str(pixel_spacing[0]))  # spacing_x
 
     return result

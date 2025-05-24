@@ -1,125 +1,254 @@
 import os
-from shapely.geometry import Polygon
+import numpy as np
+import cv2
+from ultralytics import YOLO
+from tqdm import tqdm
 from collections import defaultdict
 
 
-def read_yolo_polygons(label_path, img_width=1024, img_height=1024):
-    """Чтение YOLO полигонов из файла и преобразование в координаты изображения"""
-    polygons = []
-    if not os.path.exists(label_path):
-        return polygons
-
-    with open(label_path, 'r') as f:
-        for line in f:
-            parts = line.strip().split()
-            class_id = int(parts[0])
-            points = list(map(float, parts[1:]))
-            # Преобразование YOLO формата в абсолютные координаты
-            absolute_points = []
-            for i in range(0, len(points), 2):
-                x = points[i] * img_width
-                y = points[i + 1] * img_height
-                absolute_points.append((x, y))
-            polygons.append((class_id, absolute_points))
-    return polygons
-
-
-def calculate_iou(poly1, poly2):
-    """Вычисление Intersection over Union для двух полигонов"""
-    try:
-        shapely_poly1 = Polygon(poly1)
-        shapely_poly2 = Polygon(poly2)
-
-        if not shapely_poly1.is_valid or not shapely_poly2.is_valid:
-            return 0.0
-
-        intersection = shapely_poly1.intersection(shapely_poly2).area
-        union = shapely_poly1.union(shapely_poly2).area
-        return intersection / union if union > 0 else 0.0
-    except Exception as e:
-        print(e)
-        return 0.0
-
-
-def evaluate_segmentation(gt_dir, pred_dir, iou_threshold=0.5):
-    """Оценка точности сегментации"""
-    results = defaultdict(lambda: {'tp': 0, 'fp': 0, 'fn': 0})
-
-    for gt_file in os.listdir(gt_dir):
-        if not gt_file.endswith('.txt'):
-            continue
-
-        base_name = os.path.splitext(gt_file)[0]
-        pred_file = os.path.join(pred_dir, gt_file)
-
-        # Чтение ground truth и предсказанных полигонов
-        gt_polygons = read_yolo_polygons(os.path.join(gt_dir, gt_file))
-        pred_polygons = read_yolo_polygons(pred_file)
-
-        # Для каждого класса
-        for class_id in set([p[0] for p in gt_polygons] + [p[0] for p in pred_polygons]):
-            gt_class = [p for p in gt_polygons if p[0] == class_id]
-            pred_class = [p for p in pred_polygons if p[0] == class_id]
-
-            # Сопоставление предсказаний с ground truth
-            matched_gt = set()
-            matched_pred = set()
-
-            # Ищем наилучшие соответствия
-            for i, gt in enumerate(gt_class):
-                for j, pred in enumerate(pred_class):
-                    if j in matched_pred:
-                        continue
-                    iou = calculate_iou(gt[1], pred[1])
-                    if iou >= iou_threshold:
-                        matched_gt.add(i)
-                        matched_pred.add(j)
-                        results[class_id]['tp'] += 1
-                        break
-
-            # Несопоставленные ground truth - это False Negatives
-            results[class_id]['fn'] += len(gt_class) - len(matched_gt)
-
-            # Несопоставленные предсказания - это False Positives
-            results[class_id]['fp'] += len(pred_class) - len(matched_pred)
-
-    # Вычисление метрик для каждого класса
-    metrics_dict = {}
-    for class_id in results:
-        tp = results[class_id]['tp']
-        fp = results[class_id]['fp']
-        fn = results[class_id]['fn']
-
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        accuracy = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0
-
-        metrics_dict[class_id] = {
-            'TP': tp,
-            'FP': fp,
-            'FN': fn,
-            'Precision': precision,
-            'Recall': recall,
-            'Accuracy': accuracy
+class PixelLevelEvaluator:
+    def __init__(self, model_path, images_dir, labels_dir, img_size=512):
+        self.model = YOLO(model_path, task='segment')
+        self.images_dir = images_dir
+        self.labels_dir = labels_dir
+        self.img_size = img_size
+        self.class_names = {
+            0: 'bone',
+            1: 'muscles',
+            2: 'lung',
+            3: 'adipose'
         }
 
-    return metrics_dict
+    def create_mask_from_yolo(self, label_path, img_width, img_height):
+        """Создаем маску из YOLO разметки, где значение пикселя = class_id + 1
+
+        Args:
+            label_path (str): Путь к файлу с YOLO разметкой
+            img_width (int): Ширина изображения
+            img_height (int): Высота изображения
+
+        Returns:
+            numpy.ndarray: Одноканальная маска (H, W), где:
+                - 0: фон (нет объекта)
+                - 1: объект класса 0
+                - 2: объект класса 1
+                - и т.д.
+        """
+        mask = np.zeros((img_height, img_width), dtype=np.uint8)
+
+        if not os.path.exists(label_path):
+            return mask
+
+        with open(label_path, 'r') as f:
+            lines = f.readlines()
+
+        for line in lines:
+            parts = line.strip().split()
+            if not parts:
+                continue
+
+            class_id = int(parts[0])
+            coords = list(map(float, parts[1:]))
+
+            # Конвертируем нормализованные координаты в абсолютные
+            polygon = []
+            for i in range(0, len(coords), 2):
+                x = int(round(coords[i] * img_width))
+                y = int(round(coords[i + 1] * img_height))
+                polygon.append([x, y])
+
+            # Рисуем полигон на маске с значением = class_id + 1
+            if len(polygon) >= 3:
+                cv2.fillPoly(
+                    mask,
+                    [np.array(polygon, dtype=np.int32)],
+                    color=class_id + 1  # Используем class_id + 1 как значение пикселя
+                )
+
+        return mask
+
+    def predict_mask(self, image_path):
+        """Получаем предсказанную маску от модели с гарантированной поддержкой всех классов
+
+        Args:
+            image_path (str): Путь к входному изображению
+
+        Returns:
+            tuple: (pred_mask, img_width, img_height) где:
+                pred_mask - объединенная маска всех объектов (numpy array)
+                img_width - ширина изображения (int)
+                img_height - высота изображения (int)
+        """
+        # Читаем изображение
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"Не удалось загрузить изображение по пути: {image_path}")
+
+        img_height, img_width = img.shape[:2]
+
+        # Получаем предсказание модели
+        result = self.model.predict(img, imgsz=self.img_size, conf=0.1, device=0, verbose=False, batch=16)[0]
+
+        # Создаем пустую маску
+        pred_mask = np.zeros((img_height, img_width), dtype=np.uint8)
+
+        if result.masks is not None:
+            # Обрабатываем каждую маску и класс
+            for mask_tensor, cls in zip(result.masks.data, result.boxes.cls.cpu().numpy()):
+                # Преобразуем тензор маски в numpy array и масштабируем к исходному размеру изображения
+                mask = mask_tensor.cpu().numpy()
+                mask = cv2.resize(mask, (img_width, img_height))
+
+                # Преобразуем маску в бинарную (0 или 1)
+                binary_mask = (mask > 0.5).astype(np.uint8)
+
+                # Накладываем маску на итоговое изображение с учетом класса
+                # Здесь можно добавить логику для разных классов, если нужно
+                pred_mask = np.maximum(pred_mask, binary_mask * (int(cls) + 1))
+
+        return pred_mask.astype(np.uint8), img_width, img_height
+
+    def calculate_pixel_metrics(self, gt_mask, pred_mask):
+        """Вычисляем попиксельные метрики для масок в формате class_id + 1
+
+        Args:
+            gt_mask (numpy.ndarray): Ground Truth маска (H, W), значения:
+                                     - 0: фон
+                                     - 1: класс 0
+                                     - 2: класс 1
+                                     - и т.д.
+            pred_mask (numpy.ndarray): Предсказанная маска в том же формате
+
+        Returns:
+            dict: Метрики для каждого класса
+        """
+        metrics = {}
+        total_pixels = gt_mask.shape[0] * gt_mask.shape[1]
+
+        # Визуализация для отладки (можно раскомментировать)
+        # cv2.imshow("GT Mask", (gt_mask * (255//len(self.class_names))).astype(np.uint8))
+        # cv2.imshow("Pred Mask", (pred_mask * (255//len(self.class_names))).astype(np.uint8))
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
+        for class_id, class_name in self.class_names.items():
+            # Создаем бинарные маски для текущего класса
+            gt_class_mask = (gt_mask == (class_id + 1)).astype(np.uint8)
+            pred_class_mask = (pred_mask == (class_id + 1)).astype(np.uint8)
+
+            # Вычисляем метрики
+            tp = np.sum((gt_class_mask == 1) & (pred_class_mask == 1))  # True Positives
+            fp = np.sum((gt_class_mask == 0) & (pred_class_mask == 1))  # False Positives
+            fn = np.sum((gt_class_mask == 1) & (pred_class_mask == 0))  # False Negatives
+            tn = np.sum((gt_class_mask == 0) & (pred_class_mask == 0))  # True Negatives
+
+            # Дополнительные метрики
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+            accuracy = (tp + tn) / total_pixels if total_pixels > 0 else 0
+            iou = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0
+
+            metrics[class_id] = {
+                'class_name': class_name,
+                'accuracy': accuracy,
+                'precision': precision,
+                'recall': recall,
+                'f1_score': f1_score,
+                'iou': iou,
+                'tp': tp,
+                'fp': fp,
+                'fn': fn,
+                'tn': tn,
+                'total_pixels': np.sum(gt_class_mask)  # Общее количество пикселей класса в GT
+            }
+
+        return metrics
+
+    def evaluate(self):
+        """Оценка модели на всем датасете"""
+        class_metrics = defaultdict(lambda: {
+            'accuracy': 0,
+            'tp': 0,
+            'fp': 0,
+            'fn': 0,
+            'tn': 0,
+            'total_pixels': 0,
+            'count': 0
+        })
+
+        image_files = [f for f in os.listdir(self.images_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+        for img_file in tqdm(image_files, desc="Evaluating images"):
+            base_name = os.path.splitext(img_file)[0]
+            image_path = os.path.join(self.images_dir, img_file)
+            label_path = os.path.join(self.labels_dir, f"{base_name}.txt")
+
+            # Получаем маски
+            pred_mask, img_width, img_height = self.predict_mask(image_path)
+            gt_mask = self.create_mask_from_yolo(label_path, img_width, img_height)
+
+            # Вычисляем метрики
+            metrics = self.calculate_pixel_metrics(gt_mask, pred_mask)
+
+            # Агрегируем результаты
+            for class_id in metrics:
+                for key in ['accuracy', 'tp', 'fp', 'fn', 'tn', 'total_pixels']:
+                    class_metrics[class_id][key] += metrics[class_id][key]
+                class_metrics[class_id]['count'] += 1
+
+        # Вычисляем средние значения
+        results = {}
+        for class_id in class_metrics:
+            m = class_metrics[class_id]
+            count = m['count']
+
+            if count == 0:
+                continue
+
+            results[class_id] = {
+                'accuracy': m['accuracy'] / count,
+                'tp_rate': m['tp'] / m['total_pixels'] if m['total_pixels'] > 0 else 0,
+                'fn_rate': m['fn'] / m['total_pixels'] if m['total_pixels'] > 0 else 0,
+                'fp_rate': m['fp'] / (self.img_size * self.img_size * count)  # Относительно всех пикселей
+            }
+
+        return results
+
+    def print_results(self, results):
+        """Вывод результатов в понятном формате"""
+        print("\n=== Pixel-Level Evaluation Results ===")
+        print(f"{'Class':<10} {'Accuracy':<10} {'TP Rate':<10} {'FN Rate':<10} {'FP Rate':<10}")
+        print("-" * 50)
+
+        for class_id in sorted(results.keys()):
+            r = results[class_id]
+            print(f"{self.class_names[class_id]:<10} "
+                  f"{r['accuracy']:.2%}      "
+                  f"{r['tp_rate']:.2%}      "
+                  f"{r['fn_rate']:.2%}      "
+                  f"{r['fp_rate']:.2%}")
+
+        # Вычисляем общие средние
+        if results:
+            avg_accuracy = np.mean([r['accuracy'] for r in results.values()])
+            avg_tp = np.mean([r['tp_rate'] for r in results.values()])
+            avg_fn = np.mean([r['fn_rate'] for r in results.values()])
+
+            print("\n=== Summary ===")
+            print(f"Average Accuracy: {avg_accuracy:.2%}")
+            print(f"Average True Positive Rate: {avg_tp:.2%}")
+            print(f"Average False Negative Rate: {avg_fn:.2%}")
 
 
 if __name__ == "__main__":
-    # Пути к директориям с ground truth и предсказаниями
-    gt_labels_dir = 'labels'  # Папка с размеченными данными
-    pred_labels_dir = 'predictions'  # Папка с предсказаниями модели
+    # Конфигурация
+    MODEL_PATH = "yolov11s_axial_16_04_100ep_16batch_512_best.pt"
+    IMAGES_DIR = "test/images"
+    LABELS_DIR = "test/labels"
+    IMG_SIZE = 512
 
-    # Оценка точности
-    metrics = evaluate_segmentation(gt_labels_dir, pred_labels_dir)
-
-    # Вывод результатов
-    print("{:<10} {:<10} {:<10} {:<10} {:<12} {:<12} {:<12}".format(
-        'Class', 'TP', 'FP', 'FN', 'Precision', 'Recall', 'Accuracy'))
-
-    for class_id in sorted(metrics.keys()):
-        m = metrics[class_id]
-        print("{:<10} {:<10} {:<10} {:<10} {:<12.4f} {:<12.4f} {:<12.4f}".format(
-            class_id, m['TP'], m['FP'], m['FN'],
-            m['Precision'], m['Recall'], m['Accuracy']))
+    # Инициализация и запуск оценки
+    evaluator = PixelLevelEvaluator(MODEL_PATH, IMAGES_DIR, LABELS_DIR, IMG_SIZE)
+    results = evaluator.evaluate()
+    evaluator.print_results(results)

@@ -1,17 +1,15 @@
 import logging
-import zipfile
-from PIL import Image
 import numpy
-# from fastapi.responses import StreamingResponse, JSONResponse
-# import io
-# import time
-# import base64
+import zipfile
+import sys
+
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response
 from io import BytesIO
+from PIL import Image
+
 
 from .ai_tools.ai_tools import DICOMSequencesToMask, DICOMSequencesToMaskCustom, DICOMToMask, ImageToMask, NIIToMask
-import sys
 from pathlib import Path
 
 # Добавляем папку `kt-service` в PYTHONPATH
@@ -35,7 +33,6 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         zip_buffer = BytesIO(contents)
-        #  делаем запрос на бек
         answer = dicom_seq_to_mask.get_coordinate_slice_from_dicom(zip_buffer)
         # Возвращаем JSON с изображением и временем выполнения
         return answer
@@ -54,7 +51,6 @@ async def upload_file(file: UploadFile = File(...)):
         contents = await file.read()
         zip_buffer = BytesIO(contents)
         custom_number_slise = 0
-        #  делаем запрос на бек
         answer = dicom_seq_to_mask_custom.get_coordinate_slice_from_dicom_custom(zip_buffer)
         # Возвращаем JSON с изображением и временем выполнения
         return answer
@@ -73,7 +69,6 @@ async def upload_file(file: UploadFile = File(...)):
         contents = await file.read()
         zip_buffer = BytesIO(contents)
         custom_number_slise = 0
-        #  делаем запрос на бек
         answer = dicom_seq_to_mask_frame.get_coordinate_slice_from_dicom_frame(zip_buffer)
         # Возвращаем JSON с изображением и временем выполнения
         return answer
@@ -128,7 +123,6 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         zip_buffer = BytesIO(contents)
-        #  делаем запрос на бек
         answer = nii_seq_to_mask.get_coordinate_slice_from_nii(zip_buffer)
         # Возвращаем JSON с изображением и временем выполнения
         return answer
