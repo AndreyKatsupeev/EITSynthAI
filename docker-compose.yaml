@@ -1,22 +1,36 @@
-version: '1.0'
-
 services:
-  kt-service:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8601:8601"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - app-network
+
+  kt_service:
     shm_size: 20g
     restart: always
     build:
-      context: ./kt-service
+      context: ./kt_service
       dockerfile: Dockerfile
     runtime: nvidia
     ports:
-      - "8000:8000"
+      - "5001:5001"
     volumes:
+      - ./kt_service:/app/kt_service
       - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so
       - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
       - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi
       - ./temp:/app/temp
-      - ./imgs:/app/imgs
+      - ./weights:/app/weights
+      - ./kt_service/imgs:/app/imgs
       - ./logs:/app/logs:rw,uid=1000,gid=1000
+    environment:
+      - IMGS_DIR=/app/imgs
     devices:
       - /dev/nvidiactl:/dev/nvidiactl
       - /dev/nvidia0:/dev/nvidia0
@@ -25,6 +39,7 @@ services:
     depends_on:
       - frontend
     deploy:
+      replicas: 1
       resources:
         reservations:
           devices:
@@ -34,6 +49,45 @@ services:
         limits:
           memory: 16g
           cpus: '4.0'
+
+  mesh_service:
+    shm_size: 15g
+    restart: always
+    privileged: true
+    build:
+      context: ./mesh_service
+      dockerfile: Dockerfile
+    runtime: nvidia
+    ports:
+      - "5003:5003"
+    volumes:
+      - ./mesh_service:/app/mesh_service
+      - ./mesh_service/models:/app/models
+      - ./temp:/app/temp
+      - ./weights:/app/weights
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
+      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi
+      - ./logs:/app/logs:rw,uid=1000,gid=1000
+    devices:
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia0:/dev/nvidia0
+    depends_on:
+      - kt_service
+    networks:
+      - app-network
+    deploy:
+      replicas: 1
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16g
+          cpus: '4.0'
+
 
 networks:
   app-network:

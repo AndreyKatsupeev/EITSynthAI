@@ -197,7 +197,7 @@ class DICOMSequencesToMask(abc.ABC):
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
         response = requests.post(
-            "http://localhost:5003/createMesh/",
+            "http://mesh_service:5003/createMesh/",
             json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
         )
         if response.status_code == 200:
@@ -251,7 +251,7 @@ class DICOMSequencesToMaskCustom(DICOMSequencesToMask):
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
         response = requests.post(
-            "http://localhost:5003/createMesh/",
+            "http://mesh_service:5003/createMesh/",
             json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
         )
         if response.status_code == 200:
@@ -306,7 +306,7 @@ class DICOMToMask(DICOMSequencesToMask):
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
         response = requests.post(
-            "http://localhost:5003/createMesh/",
+            "http://mesh_service:5003/createMesh/",
             json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
         )
         if response.status_code == 200:
@@ -356,7 +356,7 @@ class ImageToMask(DICOMSequencesToMask):
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
         response = requests.post(
-            "http://localhost:5003/createMesh/",
+            "http://mesh_service:5003/createMesh/",
             json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
         )
         if response.status_code == 200:
@@ -409,7 +409,7 @@ class NIIToMask(DICOMSequencesToMask):
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
             response = requests.post(
-                "http://localhost:5003/createMesh/",
+                "http://mesh_service:5003/createMesh/",
                 json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
             )
             if response.status_code == 200:
@@ -417,9 +417,13 @@ class NIIToMask(DICOMSequencesToMask):
                 img_bytes = response.content
                 img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
                 img_mesh = cv2.flip(img_mesh, 0)
+                print(img_mesh, "++++++++++++")
+            else:
+                print(response.status_code)
             segmentation_masks_full_image = create_segmentation_masks_full_image(
                 segmentation_masks_image, only_body_mask, ribs_annotated_image,
                 axial_slice_norm_body, img_mesh
             )
             answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+
             return answer
