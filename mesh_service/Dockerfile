@@ -11,11 +11,12 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y python3 python3-pip python3-dev \
     build-essential \
-    tesseract-ocr \
-    tesseract-ocr-rus \
+    libxcursor1 \
     poppler-utils \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    libxft2 \
+    libxinerama1\
     libsm6 \
     libxext6 \
     libxrender-dev \
@@ -25,22 +26,19 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch first
-RUN pip3 install --no-cache-dir torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 -f https://download.pytorch.org/whl/cu124/torch_stable.html -f https://download.pytorch.org/whl/cu124/torchvision_stable.html -f https://download.pytorch.org/whl/cu124/torchaudio_stable.html scikit-learn
 
-# Copy requirements and install Python dependencies
+
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Create necessary directories
-RUN mkdir -p /app/temp
 
-# Copy the application
+RUN mkdir -p /app/temp /app/logs /app/weights
+
+
 COPY . /app/
 
-# Expose the port
-EXPOSE 5001
 
-# Command to run the application
-CMD ["uvicorn", "kt_service.main_kt_service:app", "--host", "0.0.0.0", "--port", "5001"]
+EXPOSE 5003
 
+
+CMD ["uvicorn", "mesh_service.main_mesh_service:app", "--host", "0.0.0.0", "--port", "5003"]
