@@ -273,13 +273,12 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
                 # Dividing nodeTagList in elements with needed nodes count
                 for i in range(0, len(node_tag_list), num_nodes):
                     nodes = node_tag_list[i:i + num_nodes]
-                    pts = [to_pixel(*node_coords[n]) for n in nodes]
+                    pts = [to_pixel(*node_coordinates[n]) for n in nodes]
                     pts_np = np.array(pts, dtype=np.int32)
                     cv2.fillPoly(img, [np.array(pts, dtype=np.int32)], class_colors[int(class_id)])
                     cv2.polylines(img, [pts_np], isClosed=True, color=(0, 0, 0), thickness=1)
             except:
                 pass  # sometimes getElement cannot find tag — leave it
-
     return img
 
 
