@@ -25,4 +25,18 @@ Contributions are welcome! Please create a pull request or submit an issue if yo
 This project is funded by Foundation for Assistance to Small Innovative Enterprises in the Scientific and Technical Sphere, Russia, Moscow.
 ## Run
 
+# Инструкция по запуску проекта
 
+1. **Скопировать проект**  
+   Выполните команду:  
+   ```bash
+   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git
+   
+2. **Скачать веса модели по [ссылке](https://github.com/user/repo/blob/branch/other_file.md)**
+3. **Поместить веса в директорию weights/**
+4. **Из корня проекта запустить команду**
+   ```bash
+   docker compose up --build
+5. **После сборки вставить в поисковую строку браузера URL**
+   ```bash
+   http://0.0.0.0:8601/
