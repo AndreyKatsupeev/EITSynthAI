@@ -23,7 +23,6 @@ This library is designed to process tomographic images for medical research, ena
 Contributions are welcome! Please create a pull request or submit an issue if you encounter problems or have ideas for improvement.
 
 This project is funded by Foundation for Assistance to Small Innovative Enterprises in the Scientific and Technical Sphere, Russia, Moscow.
-## Run
 
 # Инструкция по запуску проекта
 
@@ -40,3 +39,5 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 5. **После сборки вставить в поисковую строку браузера URL**
    ```bash
    http://0.0.0.0:8601/
+
+6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
