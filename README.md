@@ -35,7 +35,7 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 3. **Поместить веса в директорию weights/**
 4. **Из корня проекта запустить команду**
    ```bash
-   docker compose up --build
+   docker compose up --build -d
 5. **После сборки вставить в поисковую строку браузера URL**
    ```bash
    http://0.0.0.0:8601/
