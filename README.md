@@ -36,8 +36,6 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 4. **Из корня проекта запустить команду**
    ```bash
    docker compose up --build -d
-5. **После сборки вставить в поисковую строку браузера URL**
-   ```bash
-   http://0.0.0.0:8601/
+5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
 
 6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
