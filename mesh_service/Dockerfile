@@ -13,7 +13,7 @@ RUN apt-get update && \
     build-essential \
     libxcursor1 \
     poppler-utils \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libxft2 \
     libxinerama1\
