@@ -1128,3 +1128,30 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
     result.insert(0, str(pixel_spacing[0]))  # spacing_x
 
     return result
+
+
+def get_axial_slice_size(cv2_image: numpy.ndarray, default_size: int = 512) -> int:
+    """
+    Определяет размер аксиального среза медицинского изображения.
+
+    Parameters
+    ----------
+    cv2_image : np.ndarray
+        Входное изображение в формате NumPy array
+    default_size : int, optional
+        Размер по умолчанию (по умолчанию 512)
+
+    Returns
+    -------
+    int
+        Размер аксиального среза
+    """
+    try:
+        if cv2_image is None or not hasattr(cv2_image, 'shape'):
+            return default_size
+
+        height = cv2_image.shape[0]
+        return height if height in (256, 512) else default_size
+
+    except (AttributeError, IndexError, TypeError):
+        return default_size

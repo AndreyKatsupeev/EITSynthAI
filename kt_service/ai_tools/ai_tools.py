@@ -11,7 +11,7 @@ from ultralytics import YOLO
 from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_number_axial_slice, \
     create_answer, classic_norm, draw_annotate, create_segmentations_masks, create_segmentation_results_cnt, \
     get_axial_slice_body_mask, create_segmentation_masks_full_image, get_axial_slice_body_mask_nii, get_nii_mean_slice, \
-    create_list_crd_from_color_output, get_pixel_spacing, create_color_output
+    create_list_crd_from_color_output, get_pixel_spacing, create_color_output, get_axial_slice_size
 
 from pathlib import Path
 
@@ -128,7 +128,7 @@ class DICOMSequencesToMask(abc.ABC):
         """
         # Конвертируем из BGR в RGB, так как большинство моделей обучены на RGB изображениях
         axial_slice = cv2.cvtColor(axial_slice, cv2.COLOR_BGR2RGB)
-
+        axial_slice_size = get_axial_slice_size(axial_slice)
         # Замеряем время выполнения предсказания
         t1 = time.time()
 
@@ -137,7 +137,7 @@ class DICOMSequencesToMask(abc.ABC):
         # - verbose=False: отключаем вывод логов
         # - device=0: используем GPU с индексом 0
         # - imgsz=512: размер входного изображения для модели
-        results = self.axial_model(axial_slice, conf=0.3, verbose=False, device=0, imgsz=512)[0]
+        results = self.axial_model(axial_slice, conf=0.3, verbose=False, device=0, imgsz=axial_slice_size)[0]
 
         # Вычисляем время выполнения сегментации
         segmentation_time = time.time() - t1
