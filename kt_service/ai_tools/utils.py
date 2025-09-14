@@ -1106,7 +1106,7 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
         # Обрабатываем каждый найденный контур
         for cnt in contours:
             # Упрощаем контур (уменьшаем количество точек)
-            epsilon = 0.005 * cv2.arcLength(cnt, True)  # Точность 0.5%
+            epsilon = 0.001 * cv2.arcLength(cnt, True)  # Точность 0.1%
             approx = cv2.approxPolyDP(cnt, epsilon, True)
 
             # Проверяем замкнутость контура
@@ -1128,3 +1128,30 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
     result.insert(0, str(pixel_spacing[0]))  # spacing_x
 
     return result
+
+
+def get_axial_slice_size(cv2_image: numpy.ndarray, default_size: int = 512) -> int:
+    """
+    Определяет размер аксиального среза медицинского изображения.
+
+    Parameters
+    ----------
+    cv2_image : np.ndarray
+        Входное изображение в формате NumPy array
+    default_size : int, optional
+        Размер по умолчанию (по умолчанию 512)
+
+    Returns
+    -------
+    int
+        Размер аксиального среза
+    """
+    try:
+        if cv2_image is None or not hasattr(cv2_image, 'shape'):
+            return default_size
+
+        height = cv2_image.shape[0]
+        return height if height in (256, 512) else default_size
+
+    except (AttributeError, IndexError, TypeError):
+        return default_size
