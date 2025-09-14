@@ -1106,7 +1106,7 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
         # Обрабатываем каждый найденный контур
         for cnt in contours:
             # Упрощаем контур (уменьшаем количество точек)
-            epsilon = 0.005 * cv2.arcLength(cnt, True)  # Точность 0.5%
+            epsilon = 0.001 * cv2.arcLength(cnt, True)  # Точность 0.1%
             approx = cv2.approxPolyDP(cnt, epsilon, True)
 
             # Проверяем замкнутость контура

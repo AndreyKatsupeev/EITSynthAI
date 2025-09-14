@@ -105,7 +105,6 @@ async def upload_file(file: UploadFile = File(...)):
                 image = Image.open(image_file)
                 image = numpy.array(image)
 
-                # Далее ваша логика обработки изображения
                 answer = image_axial_slice_to_mask.get_coordinate_slice_from_image(image)
 
         return answer

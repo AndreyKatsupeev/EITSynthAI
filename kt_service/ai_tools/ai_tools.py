@@ -13,6 +13,8 @@ from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_n
     get_axial_slice_body_mask, create_segmentation_masks_full_image, get_axial_slice_body_mask_nii, get_nii_mean_slice, \
     create_list_crd_from_color_output, get_pixel_spacing, create_color_output, get_axial_slice_size
 
+from .mesh_tools.femm_generator import create_mesh
+
 from pathlib import Path
 
 from skimage.exposure import equalize_adapthist
@@ -28,29 +30,41 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-
 class DICOMSequencesToMask(abc.ABC):
     """Класс для автоматического поиска нужного среза из dicom-серии.
        Является родителем для классов DICOMSequencesToMaskCustom, DICOMToMask, ImageToMask, NIIToMask
 
     """
 
-    def __init__(self, ribs_model_path=None, axial_model_path=None):
+    def __init__(self, ribs_model_path=None, axial_model_256_path=None, axial_model_512_path=None):
+        """
+        Инициализация моделей для сегментации.
+        Загружает две версии модели (256 и 512), если пути не заданы — берётся из конфига.
+        """
+        # Модель для сегментации рёбер
         if ribs_model_path:
             self.ribs_model_path = ribs_model_path
         else:
-            #  Модель для сегментации ребер
             self.ribs_model_path = kt_service_config.ribs_segm_model
         self.ribs_model = self._load_model(self.ribs_model_path)
 
-        if axial_model_path:
-            #  Модель для сегментации тканей
-            self.axial_model_path = axial_model_path
+        # Модели для аксиальной сегментации (разные разрешения)
+        if axial_model_256_path:
+            self.axial_model_256_path = axial_model_256_path
         else:
-            self.axial_model_path = kt_service_config.axial_slice_segm_model
-        self.axial_model = self._load_model(self.axial_model_path)
+            self.axial_model_256_path = kt_service_config.axial_slice_segm_model_256
+
+        if axial_model_512_path:
+            self.axial_model_512_path = axial_model_512_path
+        else:
+            self.axial_model_512_path = kt_service_config.axial_slice_segm_model_512
+
+        # Загружаем обе модели заранее
+        self.axial_model_256 = self._load_model(self.axial_model_256_path)
+        self.axial_model_512 = self._load_model(self.axial_model_512_path)
 
     def _load_model(self, model_path):
+        """Загружает YOLO-модель для сегментации."""
         return YOLO(model_path, task='segment')
 
     def _search_front_slise(self, zip_buffer):
@@ -104,8 +118,9 @@ class DICOMSequencesToMask(abc.ABC):
 
         Основные этапы работы:
         1. Конвертирует цветовое пространство из BGR в RGB (требование модели)
-        2. Выполняет предсказание с заданными параметрами
-        3. Возвращает результаты сегментации и время выполнения
+        2. Определяет размер среза и выбирает соответствующую модель (256 или 512)
+        3. Выполняет предсказание с заданными параметрами
+        4. Возвращает результаты сегментации и время выполнения
 
         Args:
             axial_slice (numpy.ndarray): Аксиальный срез КТ в формате BGR (синий, зеленый, красный)
@@ -113,33 +128,39 @@ class DICOMSequencesToMask(abc.ABC):
 
         Returns:
             tuple: Кортеж содержащий:
-                - results (ultralytics.yolo.engine.results.Results): Результаты детекции/сегментации модели, содержит:
-                    * boxes: обнаруженные bounding boxes
-                    * masks: маски сегментации (если модель поддерживает)
-                    * probs: вероятности классов
-                    * другие метаданные
+                - results (ultralytics.engine.results.Results): Результаты детекции/сегментации модели
                 - segmentation_time (float): Время выполнения предсказания в секундах
 
         Note:
-            - Использует GPU (device=0) для ускорения предсказания
-            - Порог уверенности (conf) установлен на 0.3 для баланса между точностью и полнотой
-            - Размер входного изображения фиксирован (imgsz=512), изображение будет ресайзиться
+            - Использует GPU (device=0) для ускорения
+            - Порог уверенности (conf) = 0.3
+            - Размер входного изображения (imgsz) зависит от модели: 256 или 512
             - Для корректной работы модели требуется конвертация в RGB
         """
-        # Конвертируем из BGR в RGB, так как большинство моделей обучены на RGB изображениях
-        axial_slice = cv2.cvtColor(axial_slice, cv2.COLOR_BGR2RGB)
+        # Конвертируем из BGR в RGB
+        axial_slice_rgb = cv2.cvtColor(axial_slice, cv2.COLOR_BGR2RGB)
+
+        # Получаем целевой размер изображения (например, 256 или 512)
         axial_slice_size = get_axial_slice_size(axial_slice)
-        # Замеряем время выполнения предсказания
+
+        # Выбираем модель в зависимости от размера
+        if axial_slice_size == 256:
+            model = self.axial_model_256
+        else:
+            model = self.axial_model_512
+
+        # Замер времени
         t1 = time.time()
 
-        # Выполняем предсказание модели с параметрами:
-        # - conf=0.3: порог уверенности для детекции
-        # - verbose=False: отключаем вывод логов
-        # - device=0: используем GPU с индексом 0
-        # - imgsz=512: размер входного изображения для модели
-        results = self.axial_model(axial_slice, conf=0.3, verbose=False, device=0, imgsz=axial_slice_size)[0]
+        # Предсказание
+        results = model(
+            axial_slice_rgb,
+            conf=0.3,
+            verbose=False,
+            device=0,
+            imgsz=axial_slice_size
+        )[0]
 
-        # Вычисляем время выполнения сегментации
         segmentation_time = time.time() - t1
 
         return results, segmentation_time
@@ -195,17 +216,8 @@ class DICOMSequencesToMask(abc.ABC):
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-
-        response = requests.post(
-            "http://mesh_service:5003/createMesh/",
-            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
-        )
-        if response.status_code == 200:
-            # Получаем байты и конвертируем обратно в OpenCV-формат
-            img_bytes = response.content
-            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
-            img_mesh = cv2.flip(img_mesh, 0)
-
+        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(
             segmentation_masks_image, only_body_mask, ribs_annotated_image,
             axial_slice_norm_body, img_mesh
@@ -249,17 +261,8 @@ class DICOMSequencesToMaskCustom(DICOMSequencesToMask):
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-
-        response = requests.post(
-            "http://mesh_service:5003/createMesh/",
-            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
-        )
-        if response.status_code == 200:
-            # Получаем байты и конвертируем обратно в OpenCV-формат
-            img_bytes = response.content
-            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
-            img_mesh = cv2.flip(img_mesh, 0)
-
+        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(
             segmentation_masks_image, only_body_mask, ribs_annotated_image,
             axial_slice_norm_body, img_mesh
@@ -305,16 +308,8 @@ class DICOMToMask(DICOMSequencesToMask):
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-        response = requests.post(
-            "http://mesh_service:5003/createMesh/",
-            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
-        )
-        if response.status_code == 200:
-            # Получаем байты и конвертируем обратно в OpenCV-формат
-            img_bytes = response.content
-            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
-            img_mesh = cv2.flip(img_mesh, 0)
-
+        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(
             segmentation_masks_image, only_body_mask, ribs_annotated_image,
             axial_slice_norm_body, img_mesh
@@ -354,20 +349,12 @@ class ImageToMask(DICOMSequencesToMask):
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-
-        response = requests.post(
-            "http://mesh_service:5003/createMesh/",
-            json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
-        )
-        if response.status_code == 200:
-            # Получаем байты и конвертируем обратно в OpenCV-формат
-            img_bytes = response.content
-            img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
-            img_mesh = cv2.flip(img_mesh, 0)
-        segmentation_masks_full_image = create_segmentation_masks_full_image(
-            segmentation_masks_image, only_body_mask, ribs_annotated_image,
-            axial_slice_norm_body, img_mesh
-        )
+        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh = cv2.flip(img_mesh, 0)
+        segmentation_masks_full_image = create_segmentation_masks_full_image(segmentation_masks_image, only_body_mask,
+                                                                             ribs_annotated_image,
+                                                                             axial_slice_norm_body, img_mesh
+                                                                             )
         answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
         return answer
 
@@ -408,22 +395,11 @@ class NIIToMask(DICOMSequencesToMask):
             list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
-            response = requests.post(
-                "http://mesh_service:5003/createMesh/",
-                json={"params": list_crd_from_color_output[:2], "polygons": list_crd_from_color_output[2:]}
-            )
-            if response.status_code == 200:
-                # Получаем байты и конвертируем обратно в OpenCV-формат
-                img_bytes = response.content
-                img_mesh = cv2.imdecode(numpy.frombuffer(img_bytes, numpy.uint8), cv2.IMREAD_COLOR)
-                img_mesh = cv2.flip(img_mesh, 0)
-                print(img_mesh, "++++++++++++")
-            else:
-                print(response.status_code)
+            img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+            img_mesh = cv2.flip(img_mesh, 0)
             segmentation_masks_full_image = create_segmentation_masks_full_image(
                 segmentation_masks_image, only_body_mask, ribs_annotated_image,
-                axial_slice_norm_body, img_mesh
-            )
+                axial_slice_norm_body, img_mesh)
             answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
 
             return answer
