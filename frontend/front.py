@@ -40,7 +40,7 @@ with col2:
     * nii - Формат файла исследования .nii""")
 
 # Логотип в сайдбаре
-st.sidebar.image("logo.jpg", use_container_width=True)  # Замените "logo.png" на путь к вашему логотипу
+st.sidebar.image("logo.jpg", width="stretch")
 
 # Выбор маркера в сайдбаре
 generation_mode = st.sidebar.radio(
@@ -85,7 +85,7 @@ if __name__ == "__main__":
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", use_container_width=True)
+                            st.image(img, caption="Результат сегментации", width="stretch")
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", use_container_width=True)
+                            st.image(img, caption="Результат сегментации", width="stretch")
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -149,7 +149,7 @@ if __name__ == "__main__":
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", use_container_width=True)
+                            st.image(img, caption="Результат сегментации", width="stretch")
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -181,7 +181,7 @@ if __name__ == "__main__":
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", use_container_width=True)
+                            st.image(img, caption="Результат сегментации", width="stretch")
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -213,7 +213,7 @@ if __name__ == "__main__":
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", use_container_width=True)
+                            st.image(img, caption="Результат сегментации", width="stretch")
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
