@@ -70,12 +70,32 @@ def femm_add_materials(materials, freq):
         p = GetMaterialDataFreq(param['perm'], freq)
         femm.ci_addmaterial(mat, c, c, p, p, 0, 0)
 
-def femm_add_label(coords, material):
+def femm_add_label(coords, material, pos):
     '''
     add label to opened femm problem and
     set its material
+    Args:
+        coords - 2d np.array with polygone coords
+        material - string with material name
+        pos - type of label positioning:
+            edge1 - 0.1 mm righter first point
+            edgel - 0.1 mm righter leftest point
+            edgeu - 0.1 mm below uppest point
+            center - polygone center of mass
+            cutted - cutted polygone center of mass
     '''
-    label = coords[0] + [0.1, 0]
+    if pos == 'edge1':
+        label = coords[0] + [0.1, 0]
+    elif pos == 'edgel':
+        label = coords[np.argmin(coords[:, 0])] + [0.1, 0]
+    elif pos == 'edgeu':
+        label = coords[np.argmax(coords[:, 1])] + [0, -0.1]
+    elif pos == 'center':
+        label = np.mean(coords, axis = 0)
+    elif pos == 'cutted':
+        label = np.mean(coords[[-1, 0, 1]], axis = 0)
+    else:
+        raise ValueError(f'Unknown type {pos} of label positioning')
     femm.ci_addblocklabel(label[0],label[1])
     femm.ci_selectlabel(label[0],label[1])
     femm.ci_setblockprop(material, 0, 0, 0)

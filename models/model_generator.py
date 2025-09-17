@@ -4,6 +4,10 @@ from .femm_api import *
 import os
 import collections
 
+Settings = collections.namedtuple('Settings',
+    ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
+    'skinthick', 'I', 'Freq', 'thin_coeff'])
+
 def load_yolo(filepath):
     """
     load tissues borders from yolo dataset into dict, where 
@@ -50,34 +54,38 @@ def prepare_data(borders, settings):
     bordersf = {}
     maxArea = 0
     for tissue, elements in borders.items():
-        bordersf[tissue] = []
+        bordersf[tissue] = {'coords' : [], 'pos' : 'cutted'}
         idx = 0
         for data in elements:
             dataf = filter_inline_points(data, accuracy = settings.accuracy)
             adataf = сut_min_area_close_points(dataf, settings.min_area, settings.accuracy)
             area = PolyArea(adataf[:, 0], adataf[:, 1])
             if adataf.shape[0] >= 3 and area >= settings.min_area:
-                bordersf[tissue].append(adataf)
+                bordersf[tissue]['coords'].append(adataf)
                 if area > maxArea:
                     maxArea = area
                     maxAreaTissue = tissue
                     maxAreaIdx = idx
                 idx += 1
     #move to center
-    bias = np.mean(bordersf[maxAreaTissue][maxAreaIdx], axis = 0)
-    for tissue, elements in bordersf.items():
-        for i in range(len(elements)):
-            bordersf[tissue][i] = bordersf[tissue][i] - bias
-    data = filter_degr_polyfit(bordersf[maxAreaTissue][maxAreaIdx], 90, 3)
+    bias = np.mean(bordersf[maxAreaTissue]['coords'][maxAreaIdx], axis = 0)
+    bordersf[maxAreaTissue]['pos'] = 'edge1'
+    for tissue, tisinfo in bordersf.items():
+        for i in range(len(tisinfo['coords'])):
+            bordersf[tissue]['coords'][i] = bordersf[tissue]['coords'][i] - bias
+            if not (tissue == maxAreaTissue and i == maxAreaIdx):
+                bordersf[tissue]['coords'][i]  = bordersf[tissue]['coords'][i][::settings.thin_coeff]
+    data = filter_degr_polyfit(bordersf[maxAreaTissue]['coords'][maxAreaIdx], 90, 3)
     data = interpolate_surface_step(data, settings.polydeg, 2, 0.9, 3)
     data = interpolate_big_vert_breaks_poly(data, 10, 5)
-    bordersf[maxAreaTissue][maxAreaIdx] = data
+    bordersf[maxAreaTissue]['coords'][maxAreaIdx] = data
     skin = add_skin(data, settings.skinthick)
     elecs, cents = get_electrodes_coords(skin, settings.Nelec, settings.Relec)
     #move centers out of model center at distansce of elec radius
     #for selection right segment in femm preprocessor
     cents = add_skin(cents, settings.Relec)
-    bordersf['skin'] = [insert_electordes_to_polygone(skin, elecs)]
+    bordersf['skin'] = {'coords' : [insert_electordes_to_polygone(skin, elecs)],
+                        'pos' : 'edge1'}
     return (bordersf, cents, elecs)
 
 def get_materials(path):
@@ -254,20 +262,19 @@ def simulate_EIT(elecs, cents):
         femm_set_elec_state('None', cents[gnd])
     return V
 
-def create_and_calculate(fname, borders, settings):
+def create_and_calculate(fname, borders, settings, materials):
     '''
     Create FEMM problem, add countours, add conductors
     and materials, simulate EIT
     '''
     bordersf, centers, elecs = prepare_data(borders, settings)
-    materials = get_materials('./models')
     femm_create_problem()
     femm_add_conductors(settings.I)
     femm_add_materials(materials, settings.Freq)
-    for tissue, elements in bordersf.items():
-        for data in elements:
+    for tissue, tisinfo in bordersf.items():
+        for data in tisinfo['coords']:
             femm_add_contour(data)
-            femm_add_label(data, tissue)
+            femm_add_label(data, tissue, tisinfo['pos'])
     femm.ci_saveas(fname)
     V = simulate_EIT(elecs, centers)
 
@@ -276,14 +283,14 @@ def test_module():
     :return:
     """
     borders = load_yolo(r'./models/data/test_data.txt')
-    testborders = {'muscles': [borders['fat'][2]]}
-    Settings = collections.namedtuple('Settings',
-    ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
-    'skinthick', 'I', 'Freq'])
+    materials = get_materials('./models')
+    testborders = {'muscles': [borders['fat'][2]],
+                   'lung':borders['lung'],
+                   'bone':borders['bone']}
     settings = Settings(Nelec = 16, Relec = 10, accuracy = 0.5,
                         min_area = 100, polydeg = 5, skinthick = 1,
-                        I = 0.005, Freq = 50000)
-    V = create_and_calculate('./models/test.fec', testborders, settings)
+                        I = 0.005, Freq = 50000, thin_coeff = 5)
+    V = create_and_calculate('./models/test.fec', testborders, settings, materials)
     femm.ci_close()
     femm.closefemm()
 
