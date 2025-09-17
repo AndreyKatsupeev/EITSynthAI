@@ -2,6 +2,7 @@
 from .filters import *
 from .femm_api import *
 import os
+import collections
 
 def load_yolo(filepath):
     """
@@ -46,22 +47,16 @@ def load_yolo(filepath):
     return borders
 
 def prepare_data(borders, settings):
-    accuracy = settings['accuracy']
-    Nelec = settings['Nelec']
-    Relec = settings['Relec']
-    min_area = settings['min_area']
-    polydeg = settings['polydeg']
-    skinthick = settings['skinthick']
     bordersf = {}
     maxArea = 0
     for tissue, elements in borders.items():
         bordersf[tissue] = []
         idx = 0
         for data in elements:
-            dataf = filter_inline_points(data, accuracy = accuracy)
-            adataf = сut_min_area_close_points(dataf, min_area, accuracy)
+            dataf = filter_inline_points(data, accuracy = settings.accuracy)
+            adataf = сut_min_area_close_points(dataf, settings.min_area, settings.accuracy)
             area = PolyArea(adataf[:, 0], adataf[:, 1])
-            if adataf.shape[0] >= 3 and area >=min_area:
+            if adataf.shape[0] >= 3 and area >= settings.min_area:
                 bordersf[tissue].append(adataf)
                 if area > maxArea:
                     maxArea = area
@@ -74,13 +69,16 @@ def prepare_data(borders, settings):
         for i in range(len(elements)):
             bordersf[tissue][i] = bordersf[tissue][i] - bias
     data = filter_degr_polyfit(bordersf[maxAreaTissue][maxAreaIdx], 90, 3)
-    data = interpolate_surface_step(data, polydeg, 2, 0.9, 3)
+    data = interpolate_surface_step(data, settings.polydeg, 2, 0.9, 3)
     data = interpolate_big_vert_breaks_poly(data, 10, 5)
     bordersf[maxAreaTissue][maxAreaIdx] = data
-    skin = add_skin(data, skinthick)
-    elecs, cents = get_electrodes_coords(skin, Nelec, Relec)
+    skin = add_skin(data, settings.skinthick)
+    elecs, cents = get_electrodes_coords(skin, settings.Nelec, settings.Relec)
+    #move centers out of model center at distansce of elec radius
+    #for selection right segment in femm preprocessor
+    cents = add_skin(cents, settings.Relec)
     bordersf['skin'] = [insert_electordes_to_polygone(skin, elecs)]
-    return (bordersf, cents)
+    return (bordersf, cents, elecs)
 
 def get_materials(path):
     '''
@@ -215,29 +213,79 @@ def insert_electordes_to_polygone(polygone, elecs):
         out = np.insert(out, insidx, elecs[i], axis = 0)
     return out
 
+def meas_voltages_slice(elecs):
+    '''
+    get all voltages on electrodes in one slice
+    Args:
+        3d array of electrodes edges coordinates
+    Returns:
+        list of complex Voltages
+    '''
+    V = []
+    femm.co_seteditmode('contour')
+    Nelec = elecs.shape[0]
+    for i in range(Nelec):
+        femm.co_selectpoint(elecs[i,0,0], elecs[i,0,1])
+        femm.co_selectpoint(elecs[i,1,0], elecs[i,1,1])
+        V.append(femm.co_lineintegral(3)[0])
+        femm.co_clearcontour()
+    return V
+
+def simulate_EIT(elecs, cents):
+    '''
+    simulate EIT current injection and measurment
+    in created FEMM problem - seletcs all neighbour electrodes
+    as current injection and zero voltage and meas all 
+    electrodes voltages
+    '''
+    V = []
+    Nelec = cents.shape[0]
+    for i in range(Nelec):
+        gnd = 0 if i == 15 else i + 1
+        femm_set_elec_state('INJ', cents[i])
+        femm_set_elec_state('GND', cents[gnd])
+        femm.ci_createmesh()
+        not_visible = 1
+        femm.ci_analyze(not_visible)
+        femm.ci_loadsolution()
+        V.extend(meas_voltages_slice(elecs))
+        femm.co_close()
+        femm_set_elec_state('None', cents[i])
+        femm_set_elec_state('None', cents[gnd])
+    return V
+
+def create_and_calculate(fname, borders, settings):
+    '''
+    Create FEMM problem, add countours, add conductors
+    and materials, simulate EIT
+    '''
+    bordersf, centers, elecs = prepare_data(borders, settings)
+    materials = get_materials('./models')
+    femm_create_problem()
+    femm_add_conductors(settings.I)
+    femm_add_materials(materials, settings.Freq)
+    for tissue, elements in bordersf.items():
+        for data in elements:
+            femm_add_contour(data)
+            femm_add_label(data, tissue)
+    femm.ci_saveas(fname)
+    V = simulate_EIT(elecs, centers)
+
 def test_module():
     """
     :return:
     """
     borders = load_yolo(r'./models/data/test_data.txt')
-    settings = {'Nelec' : 16, 'Relec' : 10, 'accuracy' : 0.5,
-                'min_area' : 100, 'polydeg' : 5, 'skinthick' : 1}
-    bordersf, centers = prepare_data(borders, settings)
-    materials = get_materials('./models')
-    femm_create_problem()
-    femm_add_conductors(0.005)
-    femm_add_materials(materials, 50000)
-    #for tissue, elements in bordersf.items():
-    #    for data in elements:
-    #        femm_add_contour(data)
-    data = bordersf['skin'][0]
-    femm_add_contour(data)
-    femm_add_label(data, "skin")
-    data = bordersf['fat'][0]
-    femm_add_contour(data)
-    femm_add_label(data, "muscles")
-    femm_set_injecting(0, 1, centers)
-    femm_save_calculate("./models/test.fec", 0)
+    testborders = {'muscles': [borders['fat'][2]]}
+    Settings = collections.namedtuple('Settings',
+    ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
+    'skinthick', 'I', 'Freq'])
+    settings = Settings(Nelec = 16, Relec = 10, accuracy = 0.5,
+                        min_area = 100, polydeg = 5, skinthick = 1,
+                        I = 0.005, Freq = 50000)
+    V = create_and_calculate('./models/test.fec', testborders, settings)
+    femm.ci_close()
+    femm.closefemm()
 
 if __name__ == "__main__":
     test_module()

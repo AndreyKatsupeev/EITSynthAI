@@ -88,23 +88,14 @@ def femm_add_conductors(current):
     femm.ci_addconductorprop('INJ', 0, current, 0)
     femm.ci_addconductorprop('GND', 0, 0, 1)
 
-def femm_set_injecting(injN, gndN, centers):
+def femm_set_elec_state(typ, coords):
     '''
     select electrodes segments by its centers and set 
     its conductors
+    Args:
+        typ - conductor name ('INJ', 'GND', 'None')
+        coords - [x, y] for preprocessor selectsegment function
     '''
-    femm.ci_selectsegment(centers[injN, 0], centers[injN, 1])
-    femm.ci_setsegmentprop('None', 0, 1, 0, 0,'INJ')
+    femm.ci_selectsegment(coords[0], coords[1])
+    femm.ci_setsegmentprop('None', 0, 1, 0, 0, typ)
     femm.ci_clearselected()
-    femm.ci_selectsegment(centers[gndN, 0], centers[gndN, 1])
-    femm.ci_setsegmentprop('None', 0, 1, 0, 0,'GND')
-    femm.ci_clearselected()
-
-def femm_save_calculate(fname, not_visible):
-    '''
-    save problem, analyze and show solution
-    '''
-    femm.ci_saveas(fname)
-    femm.ci_createmesh()
-    femm.ci_analyze(not_visible)
-    femm.ci_loadsolution() 
