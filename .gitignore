@@ -12,7 +12,6 @@ runs
 *.cu
 *.pdf
 *.lichense_plate_recognizer
-*.csv
 .pytest_cache
 config.json
 
@@ -36,7 +35,6 @@ wandb
 *.bmp
 *.BMP
 *.cfg
-*.data
 *.heic
 *.HEIC
 *.h5
