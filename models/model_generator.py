@@ -94,9 +94,8 @@ def get_materials(path):
     '''
     materials = {}
     freq = [10, 1e2, 1e3, 1e4, 1e5, 1e6]
-    materials['lung'] = {'cond':{}, 'perm':[]}
-    #materials['lung']['cond']['inf'] = np.transpose(np.array([freq, [11111,0.0416,0.04335,0.0497,0.06424,0.0647]]))
-    #materials['lung']['cond']['def'] = np.transpose(np.array([freq, [11111,0.1387,0.1231,0.1422,0.1821,0.2017]]))
+    materials['lung'] = {'cond':{}, 'perm':[], 'infl':[]}
+    materials['lung']['infl'] = np.transpose(np.array([freq, [11111,0.0416,0.04335,0.0497,0.06424,0.0647]]))
     materials['lung']['cond'] = np.transpose(np.array([freq, [11111,0.1387,0.1231,0.1422,0.1821,0.2017]]))
     materials['lung']['perm'] = np.transpose(np.array([freq, [3.195e7,5.426e5,1.088e5,30606,11513,1567]]))
     materials['skin'] = {'cond' : np.transpose(np.array([freq, [0.3347,0.365374,0.3817,0.43529,0.566,0.839]])),
@@ -221,51 +220,15 @@ def insert_electordes_to_polygone(polygone, elecs):
         out = np.insert(out, insidx, elecs[i], axis = 0)
     return out
 
-def meas_voltages_slice(elecs):
-    '''
-    get all voltages on electrodes in one slice
-    Args:
-        3d array of electrodes edges coordinates
-    Returns:
-        list of complex Voltages
-    '''
-    V = []
-    femm.co_seteditmode('contour')
-    Nelec = elecs.shape[0]
-    for i in range(Nelec):
-        femm.co_selectpoint(elecs[i,0,0], elecs[i,0,1])
-        femm.co_selectpoint(elecs[i,1,0], elecs[i,1,1])
-        V.append(femm.co_lineintegral(3)[0])
-        femm.co_clearcontour()
-    return V
-
-def simulate_EIT(elecs, cents):
-    '''
-    simulate EIT current injection and measurment
-    in created FEMM problem - seletcs all neighbour electrodes
-    as current injection and zero voltage and meas all 
-    electrodes voltages
-    '''
-    V = []
-    Nelec = cents.shape[0]
-    for i in range(Nelec):
-        gnd = 0 if i == 15 else i + 1
-        femm_set_elec_state('INJ', cents[i])
-        femm_set_elec_state('GND', cents[gnd])
-        femm.ci_createmesh()
-        not_visible = 1
-        femm.ci_analyze(not_visible)
-        femm.ci_loadsolution()
-        V.extend(meas_voltages_slice(elecs))
-        femm.co_close()
-        femm_set_elec_state('None', cents[i])
-        femm_set_elec_state('None', cents[gnd])
-    return V
-
-def create_and_calculate(fname, borders, settings, materials):
+def create_model(fname, borders, settings, materials):
     '''
     Create FEMM problem, add countours, add conductors
     and materials, simulate EIT
+    Args:
+        fname - problem file name without file extension
+        borders - dict with raw borders
+        settings - named tuple
+        materials - dict with materials properties
     '''
     bordersf, centers, elecs = prepare_data(borders, settings)
     femm_create_problem()
@@ -275,8 +238,10 @@ def create_and_calculate(fname, borders, settings, materials):
         for data in tisinfo['coords']:
             femm_add_contour(data)
             femm_add_label(data, tissue, tisinfo['pos'])
-    femm.ci_saveas(fname)
-    V = simulate_EIT(elecs, centers)
+    if not os.path.isdir('./models/temp'):
+        os.makedirs('./models/temp')
+    femm.ci_saveas('./models/temp/' + fname + '.fec')
+    return centers, elecs
 
 def test_module():
     """
@@ -290,9 +255,10 @@ def test_module():
     settings = Settings(Nelec = 16, Relec = 10, accuracy = 0.5,
                         min_area = 100, polydeg = 5, skinthick = 1,
                         I = 0.005, Freq = 50000, thin_coeff = 5)
-    V = create_and_calculate('./models/test.fec', testborders, settings, materials)
-    femm.ci_close()
-    femm.closefemm()
+    centers, elecs = create_model('test',testborders, settings, materials)
+    print(centers, elecs)
+
 
 if __name__ == "__main__":
-    test_module()
+    import timeit
+    print(timeit.timeit('test_module()', globals=globals(), number = 1))

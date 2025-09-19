@@ -2,20 +2,25 @@
 import femm
 import numpy as np
 
-def femm_create_problem(units='millimeters', problem_type='planar', freq=50000, precision=1e-8, depth=10):
+def femm_create_problem(units='millimeters', problem_type='planar', freq=50000, precision=1e-8, depth=10, fname = ''):
     """
-    create new femm current flow problem
+    create new femm current flow problem or open creared (if fname passed to kwargs)
     Args:
         units - "inches", "millimeters", "centimeters", "mils", "meters", "micrometers"
         problem_type - "planar" for a 2-D planar problem, or to "axi" for an axisymmetric problem
         freq - current frequency in Hz
         precision - solver precision (RMS of the residual)
         depth - depth of the problem in the into-the-page direction for 2-D planar problems
+        fname - full file name
     Returns:
     """
     femm.openfemm()
-    femm.newdocument(3)  # 3 - current flow problem
-    femm.ci_probdef(units, problem_type, freq, precision, depth)
+    femm.main_minimize()
+    if fname:
+        femm.opendocument(fname)
+    else:
+        femm.newdocument(3)  # 3 - current flow problem
+        femm.ci_probdef(units, problem_type, freq, precision, depth)
 
 def femm_add_contour(coords):
     """add closed contour by points coordinates
@@ -32,7 +37,7 @@ def femm_add_contour(coords):
         femm.ci_addsegment(x1,y1,x2,y2)
     femm.ci_addsegment(x2,y2,x0,y0)
 
-def GetMaterialDataFreq(data, Freq):
+def get_material_data_freq(data, Freq):
     '''
     returns interpolated or extrapolated value within given 
     frequency value
@@ -66,9 +71,25 @@ def femm_add_materials(materials, freq):
         freq - problem frequency
     '''
     for mat, param in materials.items():
-        c = GetMaterialDataFreq(param['cond'], freq)
-        p = GetMaterialDataFreq(param['perm'], freq)
+        c = get_material_data_freq(param['cond'], freq)
+        p = get_material_data_freq(param['perm'], freq)
         femm.ci_addmaterial(mat, c, c, p, p, 0, 0)
+
+def femm_modify_material(name, prop, val):
+    '''
+    Modify material conductivity, permitivity or dielectric loss tangent
+    by name
+    '''
+    if prop == 'cond':
+        idx = [1,2]
+    elif prop == 'perm':
+        idx = [3,4]
+    elif prop == 'tang':
+        idx = [5,6]
+    else:
+        raise ValueError('unknown material property')
+    for i in idx:
+        femm.ci_modifymaterial(name, i, val)
 
 def femm_add_label(coords, material, pos):
     '''
@@ -119,3 +140,10 @@ def femm_set_elec_state(typ, coords):
     femm.ci_selectsegment(coords[0], coords[1])
     femm.ci_setsegmentprop('None', 0, 1, 0, 0, typ)
     femm.ci_clearselected()
+
+def femm_close():
+    '''
+    close FEMM post and preprocessor
+    '''
+    femm.ci_close()
+    femm.closefemm()
