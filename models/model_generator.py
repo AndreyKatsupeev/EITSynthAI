@@ -80,13 +80,13 @@ def prepare_data(borders, settings):
     data = interpolate_big_vert_breaks_poly(data, 10, 5)
     bordersf[maxAreaTissue]['coords'][maxAreaIdx] = data
     skin = add_skin(data, settings.skinthick)
-    elecs, cents = get_electrodes_coords(skin, settings.Nelec, settings.Relec)
+    elecs = get_electrodes_coords(skin, settings.Nelec, settings.Relec)
     #move centers out of model center at distansce of elec radius
     #for selection right segment in femm preprocessor
-    cents = add_skin(cents, settings.Relec)
+    elecs[:, 2, :] = add_skin(elecs[:, 2, :], settings.Relec)
     bordersf['skin'] = {'coords' : [insert_electordes_to_polygone(skin, elecs)],
                         'pos' : 'edge1'}
-    return (bordersf, cents, elecs)
+    return (bordersf, elecs)
 
 def get_materials(path):
     '''
@@ -138,7 +138,7 @@ def get_electrodes_coords(data, Nelec, Relec):
         Relec - radius of electrodes
     Returns:
         elecs - 3d np. array. first dimension - number of elctrodes, 
-                second - rigth(0) and left(1) points, third - x and y
+                second - rigth(0), left(1) and center(2) points, third - x and y
         cents - 2d array of centres coordinates
     '''
     #array of distances from right point
@@ -168,24 +168,23 @@ def get_electrodes_coords(data, Nelec, Relec):
             s -= distbetwelec
             ds.append(s)
             nearidx.append((distidx[i], distidx[i + 1]))
-    #electrodes edges coordinates
+    #electrodes coordinates [right edge left edge center]
     elecs = []
-    cent = np.empty([Nelec, 2])
     for i in range(len(nearidx)):
         pr = data[nearidx[i][0]]
         pl = data[nearidx[i][1]]
         k, b = calc_lin_coef(pr, pl)
         d = calc_dist(pr, pl)
         x0 = pr[0] - (pr[0] - pl[0]) * ds[i] / d
-        cent[i] = np.array([x0, k * x0 + b], ndmin = 2)
         dx = (pr[0] - pl[0]) * Relec / d
-        temp = np.empty([2, 2])
+        temp = np.empty([3, 2])
         for j in range(2):
             a = -1 if j else 1
             temp[j] = np.array([x0 + a * dx, k * (x0 + a * dx) + b], ndmin = 2)
+        temp[2] = np.array([x0, k * x0 + b], ndmin = 2)#center
         elecs.append(temp)
     elecs = np.array(elecs)
-    return (elecs, cent)
+    return elecs
 
 def insert_electordes_to_polygone(polygone, elecs):
     '''
@@ -194,10 +193,10 @@ def insert_electordes_to_polygone(polygone, elecs):
     out = polygone.copy()
     insidx = 0
     for i in range(elecs.shape[0]):
-        elecr = max(elecs[i, :, 0])
-        elecl = min(elecs[i, :, 0])
-        elecu = max(elecs[i, :, 1])
-        elecd = min(elecs[i, :, 1])
+        elecr = max(elecs[i, 0:2, 0])
+        elecl = min(elecs[i, 0:2, 0])
+        elecu = max(elecs[i, 0:2, 1])
+        elecd = min(elecs[i, 0:2, 1])
         xand = np.logical_and(elecl <= out[:, 0], out[:, 0] <= elecr)
         yand = np.logical_and(elecd <= out[:, 1], out[:, 1] <= elecu)
         idx = np.where(np.logical_and(xand, yand))[0]
@@ -217,31 +216,51 @@ def insert_electordes_to_polygone(polygone, elecs):
         else:
             out = np.delete(out, idx, axis = 0)
             insidx = idx[0]
-        out = np.insert(out, insidx, elecs[i], axis = 0)
+        out = np.insert(out, insidx, elecs[i, 0:2, :], axis = 0)
     return out
 
-def create_model(fname, borders, settings, materials):
-    '''
-    Create FEMM problem, add countours, add conductors
-    and materials, simulate EIT
+def save_model(fname, Nprojections = 0, dirpath = ''):
+    """
+    if Nprojections != 0 - save currnet opened problem Nprojections times
+    with unique names (projection number in name)
     Args:
         fname - problem file name without file extension
+        Nprojections (optional) - number of projections for parallel computations
+    Returns:
+        list of files paths
+    """
+    fpaths = []
+    if not dirpath:
+        dirpath = './models/temp/'
+    if not os.path.isdir(dirpath):
+        os.makedirs(dirpath)
+    if Nprojections:
+        for i in range(Nprojections):
+            fpaths.append(dirpath + fname + str(i) + '.fec')
+            femm.ci_saveas(fpaths[-1])
+    else:
+        fpaths.append(dirpath + fname + '.fec')
+        femm.ci_saveas(fpaths[-1])
+    return fpaths
+
+def create_model(borders, settings, materials):
+    '''
+    Open FEMM and create new current flow FEMM problem, add countours, 
+    add conductors and materials
+    Args:
         borders - dict with raw borders
         settings - named tuple
         materials - dict with materials properties
     '''
-    bordersf, centers, elecs = prepare_data(borders, settings)
-    femm_create_problem()
+    bordersf, elecs = prepare_data(borders, settings)
+    femm_prepare_problem()
     femm_add_conductors(settings.I)
     femm_add_materials(materials, settings.Freq)
     for tissue, tisinfo in bordersf.items():
         for data in tisinfo['coords']:
             femm_add_contour(data)
             femm_add_label(data, tissue, tisinfo['pos'])
-    if not os.path.isdir('./models/temp'):
-        os.makedirs('./models/temp')
-    femm.ci_saveas('./models/temp/' + fname + '.fec')
-    return centers, elecs
+    return elecs
 
 def test_module():
     """
@@ -255,8 +274,8 @@ def test_module():
     settings = Settings(Nelec = 16, Relec = 10, accuracy = 0.5,
                         min_area = 100, polydeg = 5, skinthick = 1,
                         I = 0.005, Freq = 50000, thin_coeff = 5)
-    centers, elecs = create_model('test',testborders, settings, materials)
-    print(centers, elecs)
+    elecs = create_model(testborders, settings, materials)
+    save_model('test', Nprojections = settings.Nelec)
 
 
 if __name__ == "__main__":

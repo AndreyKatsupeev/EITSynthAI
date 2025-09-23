@@ -1,9 +1,12 @@
 # Modeling for generating synthetic datasets with FEMM
 import femm
 from .model_generator import create_model, get_materials
-from .femm_api import get_material_data_freq, femm_create_problem, femm_modify_material, femm_set_elec_state, femm_close
+from .femm_api import *
 import numpy as np
 import os
+from concurrent.futures import ProcessPoolExecutor
+import pythoncom
+import re
 
 def get_spirometry_ref(fname):
     '''
@@ -81,123 +84,178 @@ def meas_voltages_slice(elecs):
     '''
     get all voltages on electrodes in one slice
     Args:
-        3d array of electrodes edges coordinates
+        3d array of electrodes edges and centers coordinates
     Returns:
         list of complex Voltages
     '''
-    V = []
-    femm.co_seteditmode('contour')
     Nelec = elecs.shape[0]
+    V = [0] * Nelec
+    femm.co_seteditmode('contour')
     for i in range(Nelec):
         femm.co_selectpoint(elecs[i,0,0], elecs[i,0,1])
         femm.co_selectpoint(elecs[i,1,0], elecs[i,1,1])
-        V.append(femm.co_lineintegral(3)[0].real)
+        V[i] = femm.co_lineintegral(3)[0].real
         femm.co_clearcontour()
     return V
 
-def simulate_EIT_slice(elecs, cents):
+def simulate_EIT_projection(idx, elecs):
     '''
     simulate EIT current injection and measurment
-    in created FEMM problem - seletcs all neighbour electrodes
+    in early opened FEMM problem - seletcs 2 neighbour
+    injection electrodes and measures all 
+    electrodes voltages (Sheffield protocol)
+    Args:
+        idx - index of projection
+        elecs - 3d array with coords of elecs edges and centers
+    '''
+    Nelec = elecs.shape[0]
+    femm.smartmesh(0)
+    gnd = 0 if idx == Nelec - 1 else idx + 1
+    femm_set_elec_state('INJ', elecs[idx, 2])
+    femm_set_elec_state('GND', elecs[gnd, 2])
+    femm.ci_createmesh()
+    not_visible = 1
+    femm.ci_analyze(not_visible)
+    femm.ci_loadsolution()
+    elec_volts = meas_voltages_slice(elecs)
+    femm_set_elec_state('None', elecs[idx, 2])
+    femm_set_elec_state('None', elecs[gnd, 2])
+    return elec_volts
+
+def calculate_EIT_slice_fast(fullfpath, elecs, tissue_props):
+    '''
+    open FEMM problem and 
+    simulate EIT current injection and measurment
+    - seletcs all neighbour electrodes
     as current injection and zero voltage and meas all 
     electrodes voltages
     '''
+    pythoncom.CoInitialize()
+    fname = os.path.basename(fullfpath)
+    t = re.findall(r'\d+',fname)
+    if t:
+        idx = int(t[0])
+    else:
+        raise ValueError(f'no projection number in problem file path ({fpath})')
+    femm_prepare_problem(fname = fullfpath)
+    femm.smartmesh(0)
+    Nelems = 0
     V = []
-    Nelec = elecs.shape[0]
-    for i in range(Nelec):
-        gnd = 0 if i == 15 else i + 1
-        femm_set_elec_state('INJ', cents[i])
-        femm_set_elec_state('GND', cents[gnd])
-        femm.ci_createmesh()
-        not_visible = 1
-        femm.ci_analyze(not_visible)
-        femm.ci_loadsolution()
-        V.extend(meas_voltages_slice(elecs))
+    for tisue_name, tissue_info in tissue_props.items():
+        for tissue_param, vals in tissue_info.items():
+            if not Nelems:
+                Nelems = len(vals)
+            else:
+                if Nelems != len(vals):
+                    raise ValueError((f'bad len of {tissue_param} values for'
+                                      f'{tisue_name}'))
+    for i in range(Nelems):
+        for tisue_name, tissue_info in tissue_props.items():
+            for tissue_param, vals in tissue_info.items():
+                femm_modify_material(tisue_name,tissue_param, vals[i])
+        V.append(simulate_EIT_projection(idx, elecs))
         femm.co_close()
-        femm_set_elec_state('None', cents[i])
-        femm_set_elec_state('None', cents[gnd])
+    femm.closefemm()
     return V
 
-def simulate_EIT_monitoring(fname, condspir, centers, elecs):
+def simulate_EIT_slice(fpath, elecs, tissue_props):
+    '''
+    calculate each EIT projection in different processes
+    Args:
+        fpath - list of full path to problems
+        elecs - 3d array with elec info
+        tissue_props - dict with tissues properties for monitoring modeling
+    Returns:
+        2d array with voltages for every point in tissues properties
+    '''
+    Nelec = elecs.shape[0]
+    iterelecs = [elecs] * Nelec
+    ittertissues = [tissue_props] * Nelec
+    with ProcessPoolExecutor(max_workers = Nelec) as executor:
+        results = np.array(list(executor.map(calculate_EIT_slice_fast, fpath, iterelecs, ittertissues)))
+        volts = np.reshape(np.transpose(results, (0, 2, 1)), (Nelec ** 2, results.shape[1]))
+    return volts
+
+def simulate_EIT_monitoring(fpath, condspir, elecs):
     '''
     simulate EIT monitoring with changing lungs conductivity
     in time
     Args:
-        fname - problem full file name with extension
+        fpath - list of problems full path
         condspir - 2d np array with change of lungs conductivity in time
     '''
-    femm_create_problem(fname = fname)
     Nelec = elecs.shape[0]
-    V = np.zeros([condspir.shape[0], Nelec ** 2])
-    i = 0
-    for t, cond in condspir:
-        femm_modify_material('lung','cond', cond)
-        V[i, :] = simulate_EIT_slice(elecs, centers)
-        i += 1
-    femm_close()
+    #V = np.zeros([Nelec, , Nelec, condspir.shape[0]])
+    tissue_props = {'lung' : {'cond' : condspir[:, 1]}}
+    V = simulate_EIT_slice(fpath, elecs, tissue_props)
     return V
 
 def test_module():
-    centers = [[ 1.15395082e-01, -1.28244031e+02],
-               [-6.81704177e+01, -1.34733320e+02],
-               [-1.40326752e+02, -1.15400157e+02],
-               [-1.80208490e+02, -6.60214448e+01],
-               [-1.99808497e+02,  6.07779113e-02],
-               [-1.75877399e+02,  6.94759984e+01],
-               [-1.38882178e+02,  1.25765246e+02],
-               [-7.50534301e+01,  1.57177305e+02],
-               [-4.42091798e+00,  1.65549989e+02],
-               [ 6.58785956e+01,  1.64413436e+02],
-               [ 1.30838425e+02,  1.31774627e+02],
-               [ 1.76211435e+02,  7.17205578e+01],
-               [ 2.00134604e+02,  1.72458598e+01],
-               [ 1.80019363e+02, -5.26232257e+01],
-               [ 1.32433797e+02, -1.15344026e+02],
-               [ 7.32533191e+01, -1.27977390e+02]]
-    elecs = [[[   9.97650385, -117.55959067],
-              [  -9.97650385, -118.92980356]],
-             [[ -54.0184444,  -124.91306847],
-              [ -73.96429823, -126.3837536 ]],
-             [[-124.84285543, -114.59724278],
-              [-140.9809784,  -102.78364946]],
-             [[-166.11395741,  -70.81581597],
-              [-175.90766048,  -53.37782927]],
-             [[-192.15139181,   -9.15145286],
-              [-187.49189494,   10.29820237]],
-             [[-170.59024742,   57.17605595],
-              [-162.22716189,   75.34357643]],
-             [[-138.50093632,  112.46634602],
-              [-123.95532971,  126.1931566 ]],
-             [[ -80.41952433,  146.47161907],
-              [ -60.73311799,  149.9994237 ]],
-             [[ -14.20121372,  154.770621  ],
-              [   5.73767222,  156.33293581]],
-             [[  52.01791283,  156.93527008],
-              [  71.73182368,  153.56455518]],
-             [[ 116.06475457,  131.72651863],
-              [ 130.88232372,  118.29373618]],
-             [[ 161.70708008,   77.07968507],
-              [ 171.81510674,   59.82199702]],
-             [[ 189.7255649,    26.88998212],
-              [ 190.55570599,    6.9072179 ]],
-             [[ 174.712581,    -40.24882322],
-              [ 166.4275768,   -58.45208406]],
-             [[ 133.46137384, -102.95866378],
-              [ 116.81751691, -114.04838995]],
-             [[  78.4894063,  -119.56997042],
-              [  58.50454499, -118.79194823]]]
+    elecs = [[[ 9.97650385e+00, -1.17559591e+02],
+              [-9.97650385e+00, -1.18929804e+02],
+              [ 1.15395082e-01, -1.28244031e+02],],
+             [[-5.40184444e+01, -1.24913068e+02],
+              [-7.39642982e+01, -1.26383754e+02],
+              [-6.81704177e+01, -1.34733320e+02]],
+             [[-1.24842855e+02, -1.14597243e+02],
+              [-1.40980978e+02, -1.02783649e+02],
+              [-1.40326752e+02, -1.15400157e+02]],
+             [[-1.66113957e+02, -7.08158160e+01],
+              [-1.75907660e+02, -5.33778293e+01],
+              [-1.80208490e+02, -6.60214448e+01]],
+             [[-1.92151392e+02, -9.15145286e+00],
+              [-1.87491895e+02,  1.02982024e+01],
+              [-1.99808497e+02,  6.07779113e-02]],
+             [[-1.70590247e+02,  5.71760559e+01],
+              [-1.62227162e+02,  7.53435764e+01],
+              [-1.75877399e+02,  6.94759984e+01]],
+             [[-1.38500936e+02,  1.12466346e+02],
+              [-1.23955330e+02,  1.26193157e+02],
+              [-1.38882178e+02,  1.25765246e+02]],
+             [[-8.04195243e+01,  1.46471619e+02],
+              [-6.07331180e+01,  1.49999424e+02],
+              [-7.50534301e+01,  1.57177305e+02]],
+             [[-1.42012137e+01,  1.54770621e+02],
+              [ 5.73767222e+00,  1.56332936e+02],
+              [-4.42091798e+00,  1.65549989e+02]],
+             [[ 5.20179128e+01,  1.56935270e+02],
+              [ 7.17318237e+01,  1.53564555e+02],
+              [ 6.58785956e+01,  1.64413436e+02]],
+             [[ 1.16064755e+02,  1.31726519e+02],
+              [ 1.30882324e+02,  1.18293736e+02],
+              [ 1.30838425e+02,  1.31774627e+02]],
+             [[ 1.61707080e+02,  7.70796851e+01],
+              [ 1.71815107e+02,  5.98219970e+01],
+              [ 1.76211435e+02,  7.17205578e+01]],
+             [[ 1.89725565e+02,  2.68899821e+01],
+              [ 1.90555706e+02,  6.90721790e+00],
+              [ 2.00134604e+02,  1.72458598e+01]],
+             [[ 1.74712581e+02, -4.02488232e+01],
+              [ 1.66427577e+02, -5.84520841e+01],
+              [ 1.80019363e+02, -5.26232257e+01]],
+             [[ 1.33461374e+02, -1.02958664e+02],
+              [ 1.16817517e+02, -1.14048390e+02],
+              [ 1.32433797e+02, -1.15344026e+02]],
+             [[ 7.84894063e+01, -1.19569970e+02],
+              [ 5.85045450e+01, -1.18791948e+02],
+              [ 7.32533191e+01, -1.27977390e+02]]]
+    elecs = np.array(elecs)
+    fpath = ['./models/temp/test' + str(i) + '.fec' for i in range(16)]
+    #tissue_props = {'lung' : {'cond' : 0.03}}
+    #v = simulate_EIT_slice(elecs, fpath, tissue_props)
     materials = get_materials('./models')
     Freq = 50000
     spir = get_spirometry_ref('./models/data/vent.csv')
     dT = spir[1,0]
     t1 = 1.5;
-    t2 = 2;
+    t2 = 61.5;
     idx = np.where(np.logical_and(t1 <= spir[:,0], spir[:,0] <= t2))[0]
     sample = spir[idx]
     dataf = sample.copy()
     dataf[:, 1] = filt_FFT('bypass', 1/dT, (0.05, 0.5), sample[:,1] - np.mean(sample[:,1]))
     condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
-    simulate_EIT_monitoring('./models/temp/test.fec', condspir, centers, np.array(elecs))
+    v = simulate_EIT_monitoring(fpath, condspir, elecs)
+    print(v.shape)
 
 if __name__ == "__main__":
     import timeit

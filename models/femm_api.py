@@ -2,7 +2,7 @@
 import femm
 import numpy as np
 
-def femm_create_problem(units='millimeters', problem_type='planar', freq=50000, precision=1e-8, depth=10, fname = ''):
+def femm_prepare_problem(units='millimeters', problem_type='planar', freq=50000, precision=1e-8, depth=10, fname = ''):
     """
     create new femm current flow problem or open creared (if fname passed to kwargs)
     Args:
