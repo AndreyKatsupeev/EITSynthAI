@@ -14,8 +14,8 @@ def femm_prepare_problem(units='millimeters', problem_type='planar', freq=50000,
         fname - full file name
     Returns:
     """
-    femm.openfemm()
-    femm.main_minimize()
+    femm.openfemm(1)
+    #femm.main_minimize()
     if fname:
         femm.opendocument(fname)
     else:
