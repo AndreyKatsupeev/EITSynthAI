@@ -96,7 +96,28 @@ def meas_voltages_slice(elecs):
         femm.co_selectpoint(elecs[i,1,0], elecs[i,1,1])
         V[i] = femm.co_lineintegral(3)[0].real
         femm.co_clearcontour()
+    dV = abs_to_diff(V, Nelec)
     return V
+
+def abs_to_diff(v:np.array, Nelec:int) -> np.array:
+    '''
+    calculate neighbours voltage differences from absolute
+    voltages. Can be applied to single slice or to full scan
+    Current injection voltages must present in input array
+    Args:
+        v:np.array - absolute voltage
+        Nelec:int - number of electrodes
+    Returns:
+        np.array - voltage differences between neighbour
+        electrodes for every projection
+    '''
+    diff_v = np.empty(v.shape)
+    for i in range(v.shape[0]):
+        if (i + 1) % Nelec:
+            diff_v[i] = v[i] - v[i + 1]
+        else:
+            diff_v[i] = v[i] - v[i - (Nelec - 1)]
+    return diff_v
 
 def simulate_EIT_projection(idx, elecs):
     '''
@@ -109,15 +130,15 @@ def simulate_EIT_projection(idx, elecs):
         elecs - 3d array with coords of elecs edges and centers
     '''
     Nelec = elecs.shape[0]
-    gnd = 0 if idx == Nelec - 1 else idx + 1
-    femm_set_elec_state('INJ', elecs[idx, 2])
-    femm_set_elec_state('GND', elecs[gnd, 2])
+    inj = 0 if idx == Nelec - 1 else idx + 1
+    femm_set_elec_state('INJ', elecs[inj, 2])
+    femm_set_elec_state('GND', elecs[idx, 2])
     not_visible = 1
     femm.ci_analyze(not_visible)
     femm.ci_loadsolution()
     elec_volts = meas_voltages_slice(elecs)
+    femm_set_elec_state('None', elecs[inj, 2])
     femm_set_elec_state('None', elecs[idx, 2])
-    femm_set_elec_state('None', elecs[gnd, 2])
     return elec_volts
 
 def calculate_EIT_slice_fast(fullfpath, elecs, tissue_props):
@@ -138,9 +159,9 @@ def calculate_EIT_slice_fast(fullfpath, elecs, tissue_props):
     femm_prepare_problem(fname = fullfpath)
     femm.smartmesh(0)
     Nelec = elecs.shape[0]
-    gnd = 0 if idx == Nelec - 1 else idx + 1
-    femm_set_elec_state('INJ', elecs[idx, 2])
-    femm_set_elec_state('GND', elecs[gnd, 2])
+    inj = 0 if idx == Nelec - 1 else idx + 1
+    femm_set_elec_state('INJ', elecs[inj, 2])
+    femm_set_elec_state('GND', elecs[idx, 2])
     femm.ci_createmesh()
     Nelems = 0
     V = []
@@ -160,8 +181,8 @@ def calculate_EIT_slice_fast(fullfpath, elecs, tissue_props):
         femm.ci_loadsolution()
         V.append(meas_voltages_slice(elecs))
         femm.co_close()
+    femm_set_elec_state('None', elecs[inj, 2])
     femm_set_elec_state('None', elecs[idx, 2])
-    femm_set_elec_state('None', elecs[gnd, 2])
     femm.closefemm()
     return V
 
@@ -200,28 +221,52 @@ def simulate_EIT_monitoring(fpath, condspir, elecs):
 def test_module():
     elecs = [[[ 9.97650385e+00, -1.17559591e+02],
               [-9.97650385e+00, -1.18929804e+02],
-              [ 1.89091337e-01, -1.28242909e+02]],
+              [ 1.15395082e-01, -1.28244031e+02]],
+             [[-5.40184444e+01, -1.24913068e+02],
+              [-7.39642982e+01, -1.26383754e+02],
+              [-6.81704177e+01, -1.34733320e+02]],
              [[-1.24842855e+02, -1.14597243e+02],
               [-1.40980978e+02, -1.02783649e+02],
-              [-1.40302540e+02, -1.15426817e+02]],
+              [-1.40326752e+02, -1.15400157e+02]],
+             [[-1.66113957e+02, -7.08158160e+01],
+              [-1.75907660e+02, -5.33778293e+01],
+              [-1.80208490e+02, -6.60214448e+01]],
              [[-1.92151392e+02, -9.15145286e+00],
               [-1.87491895e+02,  1.02982024e+01],
-              [-1.99808363e+02,  5.81753658e-02]],
+              [-1.99808497e+02,  6.07779113e-02]],
+             [[-1.70590247e+02,  5.71760559e+01],
+              [-1.62227162e+02,  7.53435764e+01],
+              [-1.75877399e+02,  6.94759984e+01]],
              [[-1.38500936e+02,  1.12466346e+02],
               [-1.23955330e+02,  1.26193157e+02],
-              [-1.38858896e+02,  1.25792835e+02]],
+              [-1.38882178e+02,  1.25765246e+02]],
+             [[-8.04195243e+01,  1.46471619e+02],
+              [-6.07331180e+01,  1.49999424e+02],
+              [-7.50534301e+01,  1.57177305e+02]],
              [[-1.42012137e+01,  1.54770621e+02],
               [ 5.73767222e+00,  1.56332936e+02],
-              [-4.35575653e+00,  1.65551010e+02]],
+              [-4.42091798e+00,  1.65549989e+02]],
+             [[ 5.20179128e+01,  1.56935270e+02],
+              [ 7.17318237e+01,  1.53564555e+02],
+              [ 6.58785956e+01,  1.64413436e+02]],
              [[ 1.16064755e+02,  1.31726519e+02],
               [ 1.30882324e+02,  1.18293736e+02],
-              [ 1.30863825e+02,  1.31746869e+02]],
+              [ 1.30838425e+02,  1.31774627e+02]],
+             [[ 1.61707080e+02,  7.70796851e+01],
+              [ 1.71815107e+02,  5.98219970e+01],
+              [ 1.76211435e+02,  7.17205578e+01]],
              [[ 1.89725565e+02,  2.68899821e+01],
               [ 1.90555706e+02,  6.90721790e+00],
-              [ 2.00134664e+02,  1.72441358e+01]],
+              [ 2.00134604e+02,  1.72458598e+01]],
+             [[ 1.74712581e+02, -4.02488232e+01],
+              [ 1.66427577e+02, -5.84520841e+01],
+              [ 1.80019363e+02, -5.26232257e+01]],
              [[ 1.33461374e+02, -1.02958664e+02],
               [ 1.16817517e+02, -1.14048390e+02],
-              [ 1.32459169e+02, -1.15316870e+02]]]
+              [ 1.32433797e+02, -1.15344026e+02]],
+             [[ 7.84894063e+01, -1.19569970e+02],
+              [ 5.85045450e+01, -1.18791948e+02],
+              [ 7.32533191e+01, -1.27977390e+02]]]
     elecs = np.array(elecs)
     fpath = ['./models/temp/test' + str(i) + '.fec' for i in range(16)]
     #tissue_props = {'lung' : {'cond' : [0.03]*20}}

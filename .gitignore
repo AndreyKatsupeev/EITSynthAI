@@ -14,6 +14,8 @@ runs
 *.lichense_plate_recognizer
 .pytest_cache
 config.json
+*.anc
+*.fec
 
 env
 .python-version
