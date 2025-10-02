@@ -1,12 +1,17 @@
 # Modeling for generating synthetic datasets with FEMM
 import femm
-from .model_generator import create_model, get_materials
+from .model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list
 from .femm_api import *
 import numpy as np
 import os
 from concurrent.futures import ProcessPoolExecutor
 import pythoncom
 import re
+
+
+import pyeit.eit.protocol as protocol
+import math
+from pyeit.eit.fem import EITForward
 
 def get_spirometry_ref(fname):
     '''
@@ -80,6 +85,19 @@ def spirometry_to_conuctivity(sample, Freq, materials, spir):
     condspir[:,1] = (-sample[:, 1] + max(spir[:, 1]))*(condamp/spiramp) + inf_c
     return condspir
 
+def class_to_cond(materials, freq, classes_list):
+    '''
+    prepare dict {class_name : list of elements indexes} and list of class
+    conductivity
+    '''
+    classes_vals = {}
+    for class_idx, name in classes_list.items():
+        data = materials[name]
+        classes_vals[name] = get_material_data_freq(data['cond'], freq)
+        #classes_vals[name] = complex(get_material_data_freq(data['cond'], freq),
+        #                             get_material_data_freq(data['perm'], freq))
+    return classes_vals
+
 def meas_voltages_slice(elecs):
     '''
     get all voltages on electrodes in one slice
@@ -89,7 +107,7 @@ def meas_voltages_slice(elecs):
         list of complex Voltages
     '''
     Nelec = elecs.shape[0]
-    V = [0] * Nelec
+    V = np.empty(Nelec)
     femm.co_seteditmode('contour')
     for i in range(Nelec):
         femm.co_selectpoint(elecs[i,0,0], elecs[i,0,1])
@@ -119,7 +137,7 @@ def abs_to_diff(v:np.array, Nelec:int) -> np.array:
             diff_v[i] = v[i] - v[i - (Nelec - 1)]
     return diff_v
 
-def simulate_EIT_projection(idx, elecs):
+def calculate_EIT_projection_femm(idx, elecs):
     '''
     simulate EIT current injection and measurment
     in early opened FEMM problem - seletcs 2 neighbour
@@ -141,7 +159,7 @@ def simulate_EIT_projection(idx, elecs):
     femm_set_elec_state('None', elecs[idx, 2])
     return elec_volts
 
-def calculate_EIT_slice_fast(fullfpath, elecs, tissue_props):
+def calculate_EIT_slice_femm_fast(fullfpath, elecs, tissue_props):
     '''
     open FEMM problem and 
     simulate EIT current injection and measurment
@@ -186,7 +204,17 @@ def calculate_EIT_slice_fast(fullfpath, elecs, tissue_props):
     femm.closefemm()
     return V
 
-def simulate_EIT_slice(fpath, elecs, tissue_props):
+def calculate_EIT_projection_pyeit(meshinfo, classes_vals, Nelec):
+    mesh_obj = create_pyeit_model(meshinfo, Nelec)
+    cond = meshinfo['cond']
+    for class_name, class_idx in meshinfo['classes_gr'].items():
+        cond[class_idx] = classes_vals[class_name]
+    protocol_obj = protocol.create(Nelec, dist_exc=1, step_meas=1, parser_meas="meas_current")
+    fwd = EITForward(mesh_obj, protocol_obj)
+    v = fwd.solve_eit(perm=cond)
+    return v
+
+def simulate_EIT_femm(fpath, elecs, tissue_props):
     '''
     calculate each EIT projection in different processes
     Args:
@@ -200,7 +228,7 @@ def simulate_EIT_slice(fpath, elecs, tissue_props):
     iterelecs = [elecs] * Nelec
     ittertissues = [tissue_props] * Nelec
     with ProcessPoolExecutor(max_workers = Nelec) as executor:
-        results = np.array(list(executor.map(calculate_EIT_slice_fast, fpath, iterelecs, ittertissues)))
+        results = np.array(list(executor.map(calculate_EIT_slice_femm_fast, fpath, iterelecs, ittertissues)))
         volts = np.reshape(np.transpose(results, (0, 2, 1)), (Nelec ** 2, results.shape[1]))
     return volts
 
@@ -215,7 +243,7 @@ def simulate_EIT_monitoring(fpath, condspir, elecs):
     Nelec = elecs.shape[0]
     #V = np.zeros([Nelec, , Nelec, condspir.shape[0]])
     tissue_props = {'lung' : {'cond' : condspir[:, 1]}}
-    V = simulate_EIT_slice(fpath, elecs, tissue_props)
+    V = simulate_EIT_femm(fpath, elecs, tissue_props)
     return V
 
 def test_module():
@@ -276,14 +304,16 @@ def test_module():
     spir = get_spirometry_ref('./models/data/vent.csv')
     dT = spir[1,0]
     t1 = 1.5;
-    t2 = 61.5;
+    t2 = 2;
     idx = np.where(np.logical_and(t1 <= spir[:,0], spir[:,0] <= t2))[0]
     sample = spir[idx[0]:idx[-1]:5]
     dataf = sample.copy()
     dataf[:, 1] = filt_FFT('bypass', 1/dT, (0.05, 0.5), sample[:,1] - np.mean(sample[:,1]))
     condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
     v = simulate_EIT_monitoring(fpath, condspir, elecs)
-    print(v.shape)
+    meshinfo = prepare_mesh('./models/data/tmp.txt', classes_list)
+    classes_vals = class_to_cond(materials, Freq, classes_list)
+    v = calculate_EIT_projection_pyeit(meshinfo, classes_vals, elecs.shape[0])
 
 if __name__ == "__main__":
     import timeit

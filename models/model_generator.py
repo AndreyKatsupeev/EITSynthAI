@@ -3,12 +3,15 @@ from .filters import *
 from .femm_api import *
 import os
 import collections
+from pyeit.mesh.wrapper import PyEITMesh
+from pyeit.mesh.external import place_electrodes_equal_spacing
 
 Settings = collections.namedtuple('Settings',
     ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
     'skinthick', 'I', 'Freq', 'thin_coeff'])
+classes_list = {'0': 'bone', '1':'muscles', '2':'fat', '3':'lung', '4':'skin'}
 
-def load_yolo(filepath):
+def load_yolo(filepath, classes_list):
     """
     load tissues borders from yolo dataset into dict, where 
         keys - tissues classes,
@@ -20,7 +23,6 @@ def load_yolo(filepath):
         borders = {tissue_type : np.array[[x],[y]]}
     """
     borders = {}
-    classes_list = {'0': 'bone', '1':'muscles', '2':'fat', '3':'lung'}
     with open(filepath) as file:
         for line in file:
             x = []
@@ -49,6 +51,88 @@ def load_yolo(filepath):
                     borders[tissue_type] = []
                 borders[tissue_type].append(np.transpose(np.array([x, y])))
     return borders
+
+def load_mesh(fpath, classes_list):
+    '''
+    load mesh from mesh service, saved in txt
+    Args:
+        fpath - path to txt
+    Returns:
+        dict with nodes, elems and conductivity
+    '''
+    classes_elems_idxs = {}
+    for _, class_name in classes_list.items():
+        classes_elems_idxs[class_name] = []
+    dic = {'NODES' : [], 'TRIANGLES': [], 'CLASS': []}
+    key = ''
+    i = 0
+    with open(fpath,'r') as file:
+        for line in file:
+            if line.strip():
+                s = line.strip().split(' ')
+                if '#' in line:
+                    key = line.strip()[2:]
+                elif key == 'NODES':
+                    dic[key].append([float(s[1]), float(s[2])])
+                elif key == 'TRIANGLES':
+                    dic[key].append([int(s[i]) - 1 for i in range(3)])
+                    clasidx = int(float(s[-1]))
+                    dic['CLASS'].append(clasidx)
+                    class_name = classes_list[str(clasidx)]
+                    classes_elems_idxs[class_name].append(i)
+                    i += 1
+    return {'element' : np.array(dic['TRIANGLES']),
+            'node' : np.array(dic['NODES']),
+            'cond' : np.array(dic['CLASS']),
+            'classes_gr':classes_elems_idxs}
+
+def check_mesh_nodes(meshinfo):
+    '''
+    check that all nodes used by elements, if not - delete unused nodes
+    and change elements nodes indexes
+    Args:
+        dict with meshinfo
+    '''
+    all_used_nodes = list(set(meshinfo['element'].ravel()))
+    newmeshinfo = dict(meshinfo)
+    if len(all_used_nodes) < meshinfo['node'].shape[0]:    
+        not_used_nodes = [i for i in range(meshinfo['node'].shape[0]) if i not in all_used_nodes]
+        newmeshinfo['node'] = np.delete(meshinfo['node'], not_used_nodes, axis=0)
+        node_number_bias = [all_used_nodes[i] - i for i in range(len(all_used_nodes))]
+        newmeshinfo['element'] = np.empty([0,3], dtype='i')
+        for triangle in meshinfo['element']:
+            tmp = []
+            for node in triangle:
+                if node in all_used_nodes:
+                    bias_idx = all_used_nodes.index(node)
+                    tmp.append(node - node_number_bias[bias_idx])
+            if len(tmp) != 3:
+                raise ValueError('triangle with unused noode impossible')
+            newmeshinfo['element'] = np.vstack((newmeshinfo['element'],np.array(tmp)))    
+    return newmeshinfo
+
+def prepare_mesh(fpath, classes_list):
+    badmesh = load_mesh(fpath, classes_list)
+    mesh = check_mesh_nodes(badmesh)
+    return mesh
+
+def create_pyeit_model(meshinfo, Nelec):
+    '''
+    create mesh object for pyeit from loaded meshinfo with equal spaced
+    elctrodes
+    Args:
+        dict with shape nodes and elements
+        int - number of electrodes
+    Returns:
+        PyEITMesh object
+    '''
+    mesh_obj = PyEITMesh(element=meshinfo['element'], node=meshinfo['node'])
+    electrode_nodes = place_electrodes_equal_spacing(mesh_obj, 
+                                                     n_electrodes=Nelec,
+                                                     starting_angle = math.radians(180),
+                                                     starting_offset = 0)
+    mesh_obj.el_pos = np.array(electrode_nodes)
+    return mesh_obj
 
 def prepare_data(borders, settings):
     bordersf = {}
@@ -243,7 +327,7 @@ def save_model(fname, Nprojections = 0, dirpath = ''):
         femm.ci_saveas(fpaths[-1])
     return fpaths
 
-def create_model(borders, settings, materials):
+def create_femm_model(borders, settings, materials):
     '''
     Open FEMM and create new current flow FEMM problem, add countours, 
     add conductors and materials
@@ -266,7 +350,10 @@ def test_module():
     """
     :return:
     """
-    borders = load_yolo(r'./models/data/test_data.txt')
+    import matplotlib.pyplot as plt
+    from pyeit.visual.plot import create_mesh_plot
+    
+    borders = load_yolo(r'./models/data/test_data.txt', classes_list)
     materials = get_materials('./models')
     testborders = {'muscles': [borders['fat'][2]],
                    'lung':borders['lung'],
@@ -274,8 +361,14 @@ def test_module():
     settings = Settings(Nelec = 16, Relec = 10, accuracy = 0.5,
                         min_area = 100, polydeg = 5, skinthick = 1,
                         I = 0.005, Freq = 50000, thin_coeff = 5)
-    elecs = create_model(testborders, settings, materials)
+    elecs = create_femm_model(testborders, settings, materials)
     save_model('test', Nprojections = settings.Nelec)
+    meshinfo = prepare_mesh('./models/data/tmp.txt', classes_list)
+    mesh_obj = create_pyeit_model(meshinfo, settings.Nelec)
+    mesh_obj.perm = meshinfo['cond']
+    fig, ax = plt.subplots()
+    create_mesh_plot(ax, mesh_obj, electrodes = mesh_obj.el_pos,coordinate_labels="radiological")
+    plt.savefig('./models/temp/img.png')
 
 
 if __name__ == "__main__":
