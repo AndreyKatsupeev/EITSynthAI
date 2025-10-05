@@ -3,23 +3,23 @@ import femm
 from .model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list
 from .femm_api import *
 import numpy as np
+import numpy.typing as npt
 import os
 from concurrent.futures import ProcessPoolExecutor
 import pythoncom
 import re
 
-
 import pyeit.eit.protocol as protocol
 import math
 from pyeit.eit.fem import EITForward
 
-def get_spirometry_ref(fname):
+def get_spirometry_ref(fname:str)->npt.NDArray:
     '''
     load ventilation reference from file
     Data recorded by custom EIT device at 
     Platov South-Russian Polytechnical University (Novocherkassk)
     Args:
-        fname - path to file
+        fname:str - path to file
     Returns:
         2d np.array vent(t)
     '''
@@ -31,7 +31,21 @@ def get_spirometry_ref(fname):
     ventref = np.array(data)
     return ventref
 
-def filt_FFT(typ, FPS, FC, data):
+def make_spirometry(N_resp:float, N_points:int)->npt.NDArray:
+    '''
+    make referent spirometry signal with N_points per one inspiration
+    Args:
+        N_resp:float - number of inspirations per minute
+        N_points:int - number of points per one respiration
+    Returns:
+        numpy.array([time,spiro])
+    '''
+    T=60
+    t = np.linspace(0,T/N_resp,N_points)
+    x = 0.5*np.sin(2*3.1415*1/(60/N_resp)*t+math.radians(270))+0.5
+    return np.transpose(np.array([t, x]))
+
+def filt_FFT(typ:str, FPS:float, FC, data:npt.NDArray)->npt.NDArray:
     '''
     make spectrum, zero some frequencys ampliude, rebuild signal from 
     spectrum
@@ -66,7 +80,7 @@ def filt_FFT(typ, FPS, FC, data):
     dataf = np.fft.ifft(Yi)
     return dataf.real
 
-def spirometry_to_conuctivity(sample, Freq, materials, spir):
+def spirometry_to_conuctivity(sample:npt.NDArray, Freq:float, materials:dict, spir:npt.NDArray):
     '''
     calculate lungs conductivity change from spirometry data
     Args:
@@ -77,28 +91,36 @@ def spirometry_to_conuctivity(sample, Freq, materials, spir):
     Returns:
         2d np.array conductivity(time) [time, conductivity]
     '''
+    if len(spir.shape) == 1:
+        sp = spir
+    elif len(spir.shape) == 2:
+        sp = spir[:,1]
+    else:
+        raise ValueError('unsupported spiromtery data shape')
     def_c = get_material_data_freq(materials['lung']['cond'],Freq)
     inf_c = get_material_data_freq(materials['lung']['infl'],Freq)
-    spiramp = max(spir[:,1]) - min(spir[:,1])
+    spiramp = max(sp) - min(sp)
     condamp = def_c - inf_c
     condspir = sample.copy()
-    condspir[:,1] = (-sample[:, 1] + max(spir[:, 1]))*(condamp/spiramp) + inf_c
+    condspir[:,1] = (-sample[:, 1] + max(sp))*(condamp/spiramp) + inf_c
     return condspir
 
-def class_to_cond(materials, freq, classes_list):
+def class_to_cond(materials:dict, freq:float, classes_list:dict)->dict:
     '''
-    prepare dict {class_name : list of elements indexes} and list of class
-    conductivity
+    prepare dict {class_name : conductivity}
+    Args:
+        materials:dict - class_name:np.2darray with conductivity and permitivity from frequency
+        freq:float - problem frequency
+        clases_list:dict - {class_code:class_name}
     '''
     classes_vals = {}
-    for class_idx, name in classes_list.items():
-        data = materials[name]
-        classes_vals[name] = get_material_data_freq(data['cond'], freq)
+    for _, name in classes_list.items():
+        classes_vals[name] = get_material_data_freq(materials[name]['cond'], freq)
         #classes_vals[name] = complex(get_material_data_freq(data['cond'], freq),
         #                             get_material_data_freq(data['perm'], freq))
     return classes_vals
 
-def meas_voltages_slice(elecs):
+def meas_voltages_slice(elecs:npt.NDArray)->npt.NDArray:
     '''
     get all voltages on electrodes in one slice
     Args:
@@ -115,9 +137,9 @@ def meas_voltages_slice(elecs):
         V[i] = femm.co_lineintegral(3)[0].real
         femm.co_clearcontour()
     dV = abs_to_diff(V, Nelec)
-    return V
+    return dV
 
-def abs_to_diff(v:np.array, Nelec:int) -> np.array:
+def abs_to_diff(v:npt.NDArray, Nelec:int) -> npt.NDArray:
     '''
     calculate neighbours voltage differences from absolute
     voltages. Can be applied to single slice or to full scan
@@ -137,7 +159,7 @@ def abs_to_diff(v:np.array, Nelec:int) -> np.array:
             diff_v[i] = v[i] - v[i - (Nelec - 1)]
     return diff_v
 
-def calculate_EIT_projection_femm(idx, elecs):
+def calculate_EIT_projection_femm(idx:int, elecs:npt.NDArray)->npt.NDArray:
     '''
     simulate EIT current injection and measurment
     in early opened FEMM problem - seletcs 2 neighbour
@@ -159,7 +181,7 @@ def calculate_EIT_projection_femm(idx, elecs):
     femm_set_elec_state('None', elecs[idx, 2])
     return elec_volts
 
-def calculate_EIT_slice_femm_fast(fullfpath, elecs, tissue_props):
+def calculate_EIT_slice_femm_fast(fullfpath:str, elecs:npt.NDArray, tissue_props:dict, V:npt.NDArray):
     '''
     open FEMM problem and 
     simulate EIT current injection and measurment
@@ -173,7 +195,7 @@ def calculate_EIT_slice_femm_fast(fullfpath, elecs, tissue_props):
     if t:
         idx = int(t[0])
     else:
-        raise ValueError(f'no projection number in problem file path ({fpath})')
+        raise ValueError(f'no projection number in problem file path ({fullfpath})')
     femm_prepare_problem(fname = fullfpath)
     femm.smartmesh(0)
     Nelec = elecs.shape[0]
@@ -181,30 +203,20 @@ def calculate_EIT_slice_femm_fast(fullfpath, elecs, tissue_props):
     femm_set_elec_state('INJ', elecs[inj, 2])
     femm_set_elec_state('GND', elecs[idx, 2])
     femm.ci_createmesh()
-    Nelems = 0
-    V = []
-    for tisue_name, tissue_info in tissue_props.items():
-        for tissue_param, vals in tissue_info.items():
-            if not Nelems:
-                Nelems = len(vals)
-            else:
-                if Nelems != len(vals):
-                    raise ValueError((f'bad len of {tissue_param} values for'
-                                      f'{tisue_name}'))
+    Nelems = V.shape[2]
     for i in range(Nelems):
         for tisue_name, tissue_info in tissue_props.items():
             for tissue_param, vals in tissue_info.items():
                 femm_modify_material(tisue_name,tissue_param, vals[i])
         femm.ci_analyze(1)
         femm.ci_loadsolution()
-        V.append(meas_voltages_slice(elecs))
-        femm.co_close()
+        V[idx,:,i] = meas_voltages_slice(elecs)
+        #femm.co_close() #MORE SPEEEED!!11
     femm_set_elec_state('None', elecs[inj, 2])
     femm_set_elec_state('None', elecs[idx, 2])
     femm.closefemm()
-    return V
 
-def calculate_EIT_projection_pyeit(meshinfo, classes_vals, Nelec):
+def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, Nelec:int)->npt.NDArray:
     mesh_obj = create_pyeit_model(meshinfo, Nelec)
     cond = meshinfo['cond']
     for class_name, class_idx in meshinfo['classes_gr'].items():
@@ -214,7 +226,7 @@ def calculate_EIT_projection_pyeit(meshinfo, classes_vals, Nelec):
     v = fwd.solve_eit(perm=cond)
     return v
 
-def simulate_EIT_femm(fpath, elecs, tissue_props):
+def simulate_EIT_femm(fpath:list[str], elecs:npt.NDArray, tissue_props:dict, V:npt.NDArray)->npt.NDArray:
     '''
     calculate each EIT projection in different processes
     Args:
@@ -225,14 +237,22 @@ def simulate_EIT_femm(fpath, elecs, tissue_props):
         2d array with voltages for every point in tissues properties
     '''
     Nelec = elecs.shape[0]
-    iterelecs = [elecs] * Nelec
-    ittertissues = [tissue_props] * Nelec
+    Nelems = 0
+    for tisue_name, tissue_info in tissue_props.items():
+        for tissue_param, vals in tissue_info.items():
+            if not Nelems:
+                Nelems = len(vals)
+            else:
+                if Nelems != len(vals):
+                    raise ValueError((f'bad len of {tissue_param} values for'
+                                      f'{tisue_name}'))
+    volts = np.zeros([Nelec, Nelec, Nelems])
     with ProcessPoolExecutor(max_workers = Nelec) as executor:
-        results = np.array(list(executor.map(calculate_EIT_slice_femm_fast, fpath, iterelecs, ittertissues)))
-        volts = np.reshape(np.transpose(results, (0, 2, 1)), (Nelec ** 2, results.shape[1]))
+        [executor.submit(calculate_EIT_slice_femm_fast, fpath[i], elecs, tissue_props, V) for i in range(Nelec)]
+    volts = np.reshape(volts,(Nelec ** 2, Nelems))
     return volts
 
-def simulate_EIT_monitoring(fpath, condspir, elecs):
+def simulate_EIT_monitoring(fpath:list[str], condspir:npt.NDArray, elecs:npt.NDArray)->npt.NDArray:
     '''
     simulate EIT monitoring with changing lungs conductivity
     in time
@@ -241,12 +261,13 @@ def simulate_EIT_monitoring(fpath, condspir, elecs):
         condspir - 2d np array with change of lungs conductivity in time
     '''
     Nelec = elecs.shape[0]
-    #V = np.zeros([Nelec, , Nelec, condspir.shape[0]])
+    V = np.zeros([Nelec, Nelec, condspir.shape[0]])
     tissue_props = {'lung' : {'cond' : condspir[:, 1]}}
-    V = simulate_EIT_femm(fpath, elecs, tissue_props)
+    V = simulate_EIT_femm(fpath, elecs, tissue_props, V)
     return V
 
 def test_module():
+    import time
     elecs = [[[ 9.97650385e+00, -1.17559591e+02],
               [-9.97650385e+00, -1.18929804e+02],
               [ 1.15395082e-01, -1.28244031e+02]],
@@ -297,24 +318,39 @@ def test_module():
               [ 7.32533191e+01, -1.27977390e+02]]]
     elecs = np.array(elecs)
     fpath = ['./models/temp/test' + str(i) + '.fec' for i in range(16)]
-    #tissue_props = {'lung' : {'cond' : [0.03]*20}}
-    #v = simulate_EIT_slice(fpath, elecs, tissue_props)
+    #t = []
+    #for i in range(1,15):
+    #    start = time.time()
+    #    tissue_props = {'lung' : {'cond' : [0.03]*i}}
+    #    v = simulate_EIT_femm(fpath, elecs, tissue_props)
+     #   #v = calculate_EIT_slice_femm_fast(fpath[0], elecs, tissue_props)
+     #   end = time.time()
+    #    t.append(end - start)
+    #    print(f't({i}): {t[-1]}')
+    #for i in range(1,len(t)):
+    #    print(f'dt({i}): {t[i] - t[-1]}')
     materials = get_materials('./models')
     Freq = 50000
-    spir = get_spirometry_ref('./models/data/vent.csv')
-    dT = spir[1,0]
-    t1 = 1.5;
-    t2 = 2;
-    idx = np.where(np.logical_and(t1 <= spir[:,0], spir[:,0] <= t2))[0]
-    sample = spir[idx[0]:idx[-1]:5]
-    dataf = sample.copy()
-    dataf[:, 1] = filt_FFT('bypass', 1/dT, (0.05, 0.5), sample[:,1] - np.mean(sample[:,1]))
+    #spir = get_spirometry_ref('./models/data/vent.csv')
+    #dT = spir[1,0]
+    #t1 = 1.5;
+    #t2 = 11.5;
+    #idx = np.where(np.logical_and(t1 <= spir[:,0], spir[:,0] <= t2))[0]
+    #sample = spir[idx[0]:idx[-1]:12]
+    #dataf = sample.copy()
+    #dataf[:, 1] = filt_FFT('bypass', 1/dT, (0.05, 0.5), sample[:,1] - np.mean(sample[:,1]))
+    Nspir = 12
+    dataf = make_spirometry(Nspir, 15)
+    spir = dataf[:,1]*1.5
     condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
-    v = simulate_EIT_monitoring(fpath, condspir, elecs)
-    meshinfo = prepare_mesh('./models/data/tmp.txt', classes_list)
-    classes_vals = class_to_cond(materials, Freq, classes_list)
-    v = calculate_EIT_projection_pyeit(meshinfo, classes_vals, elecs.shape[0])
+    v_spir = simulate_EIT_monitoring(fpath, condspir, elecs)
+    v = np.tile(v_spir, Nspir)
+    print(v.shape)
+    #meshinfo = prepare_mesh('./models/data/tmp.txt', classes_list)
+    #classes_vals = class_to_cond(materials, Freq, classes_list)
+    #v = calculate_EIT_projection_pyeit(meshinfo, classes_vals, elecs.shape[0])
 
 if __name__ == "__main__":
+    #test_module()
     import timeit
     print(timeit.timeit('test_module()', globals=globals(), number = 1))

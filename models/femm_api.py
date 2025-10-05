@@ -1,8 +1,15 @@
 ### Interacting with FEMM
 import femm
 import numpy as np
+import numpy.typing as npt
 
-def femm_prepare_problem(units='millimeters', problem_type='planar', freq=50000, precision=1e-8, depth=10, fname = ''):
+def femm_prepare_problem(units='millimeters', 
+                         problem_type='planar',
+                         freq=50000,
+                         precision=1e-8,
+                         depth=10,
+                         minangle = 15,
+                         fname = ''):
     """
     create new femm current flow problem or open creared (if fname passed to kwargs)
     Args:
@@ -20,9 +27,9 @@ def femm_prepare_problem(units='millimeters', problem_type='planar', freq=50000,
         femm.opendocument(fname)
     else:
         femm.newdocument(3)  # 3 - current flow problem
-        femm.ci_probdef(units, problem_type, freq, precision, depth)
+        femm.ci_probdef(units, problem_type, freq, precision, depth, minangle)
 
-def femm_add_contour(coords):
+def femm_add_contour(coords:npt.NDArray):
     """add closed contour by points coordinates
     Args:
         coords - np.array([x : list, y : list])
@@ -63,7 +70,7 @@ def get_material_data_freq(data, Freq):
     y = (y2 - y1) * Freq / (x2 - x1) - (y2 - y1) * x1 / (x2 - x1) + y1
     return y
 
-def femm_add_materials(materials, freq):
+def femm_add_materials(materials:dict, freq):
     '''
     adds materials to opened femm problem from dict of dicts
     Args:
@@ -75,7 +82,7 @@ def femm_add_materials(materials, freq):
         p = get_material_data_freq(param['perm'], freq)
         femm.ci_addmaterial(mat, c, c, p, p, 0, 0)
 
-def femm_modify_material(name, prop, val):
+def femm_modify_material(name:str, prop:str, val:float):
     '''
     Modify material conductivity, permitivity or dielectric loss tangent
     by name
@@ -91,7 +98,7 @@ def femm_modify_material(name, prop, val):
     for i in idx:
         femm.ci_modifymaterial(name, i, val)
 
-def femm_add_label(coords, material, pos):
+def femm_add_label(coords, material:dict, pos:str):
     '''
     add label to opened femm problem and
     set its material

@@ -1,8 +1,9 @@
 ###Data filters for sh**** input data
 import numpy as np
+import numpy.typing as npt
 import math
 
-def calc_lin_coef(point1, point2):
+def calc_lin_coef(point1, point2)->tuple[float, float]:
     """
     Calculate y = k * x * b coefficients by 2 points coordinate
     Args:
@@ -19,7 +20,7 @@ def calc_lin_coef(point1, point2):
     b = - (x2*y1 - x1*y2)/(x1 - x2)
     return (k, b)
     
-def calc_dist(point1, point2, typ=None):
+def calc_dist(point1, point2, typ=None)->float:
     """
     Calculate distance between 2 points by different methods:
     dist - linear distance between 2 points
@@ -45,7 +46,7 @@ def calc_dist(point1, point2, typ=None):
         raise ValueError(f'Unknown distance calculation method {typ}')
     return dist
 
-def check_point_in_line(filtered_data, point, accuracy):
+def check_point_in_line(filtered_data:npt.NDArray, point, accuracy:float)->bool:
     """
     check is new point inline last 2 points in filtered data
     Args:
@@ -73,7 +74,7 @@ def check_point_in_line(filtered_data, point, accuracy):
     else:
         return True
 
-def filter_degr_polyfit(data, min_deg, N_points):
+def filter_degr_polyfit(data:npt.NDArray, min_deg:float, N_points:int)->npt.NDArray:
     """
     calculate angle of inclination of line for group of points of specified length, 
     if difference between angle of new group greater than threshold - ignore all point
@@ -102,7 +103,7 @@ def filter_degr_polyfit(data, min_deg, N_points):
             break
     return dataf
     
-def filter_inline_points(data, *args, **kwargs):
+def filter_inline_points(data:npt.NDArray, **kwargs)->npt.NDArray:
     """deletes multiple inline points and appendixes
     Args:
         data : np.array([x : list of floats, y : list of floats])
@@ -143,13 +144,13 @@ def filter_inline_points(data, *args, **kwargs):
             data_filt = np.delete(data_filt, (-1), axis = 0)
     return data_filt
     
-def PolyArea(x,y):
+def PolyArea(x,y)->float:
     """Implementation of Shoelace formula from stackoverflow for
     calculation polygon area
     """
     return 0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1)))
 
-def сut_min_area_close_points(data, min_area, accuracy):
+def сut_min_area_close_points(data:npt.NDArray, min_area:float, accuracy:float)->npt.NDArray:
     """
     if polygon area after 2 close points less than threshold - delete smaller polygone
     continues while all polygones will be greater threshold
@@ -179,7 +180,7 @@ def сut_min_area_close_points(data, min_area, accuracy):
         i += 1
     return data
 
-def interpolate_surface_step(d, por, dx, borderc, thinN):
+def interpolate_surface_step(d:npt.NDArray, por:int, dx:float, borderc:float, thinN:float)->npt.NDArray:
     '''
     interpolate polygone d with polynome of degreee por
     new x coordinates - arange from min x to max with step dx
@@ -214,7 +215,7 @@ def interpolate_surface_step(d, por, dx, borderc, thinN):
         dataf = np.append(dataf, polypoints, axis = 0)
     return dataf
 
-def interpolate_big_vert_breaks_lin(data, Nmax):
+def interpolate_big_vert_breaks_lin(data:npt.NDArray, Nmax:int)->npt.NDArray:
     '''
     if given polygone have big vertical brakes (distance between neighboring points
     more than 4 median distance over all neighboring points)
@@ -256,7 +257,7 @@ def interpolate_big_vert_breaks_lin(data, Nmax):
             break
     return newdata
 
-def interpolate_big_vert_breaks_poly(data, por, N):
+def interpolate_big_vert_breaks_poly(data:npt.NDArray, por:int, N:int)->npt.NDArray:
     '''
     adds new points by polynomial interpolation to the left and right of polygone
     Args:

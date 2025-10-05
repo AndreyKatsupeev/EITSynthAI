@@ -5,13 +5,14 @@ import os
 import collections
 from pyeit.mesh.wrapper import PyEITMesh
 from pyeit.mesh.external import place_electrodes_equal_spacing
+import numpy.typing as npt
 
 Settings = collections.namedtuple('Settings',
     ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
     'skinthick', 'I', 'Freq', 'thin_coeff'])
 classes_list = {'0': 'bone', '1':'muscles', '2':'fat', '3':'lung', '4':'skin'}
 
-def load_yolo(filepath, classes_list):
+def load_yolo(filepath:str, classes_list:dict)->dict:
     """
     load tissues borders from yolo dataset into dict, where 
         keys - tissues classes,
@@ -52,7 +53,7 @@ def load_yolo(filepath, classes_list):
                 borders[tissue_type].append(np.transpose(np.array([x, y])))
     return borders
 
-def load_mesh(fpath, classes_list):
+def load_mesh(fpath:str, classes_list:dict)->dict:
     '''
     load mesh from mesh service, saved in txt
     Args:
@@ -86,7 +87,7 @@ def load_mesh(fpath, classes_list):
             'cond' : np.array(dic['CLASS']),
             'classes_gr':classes_elems_idxs}
 
-def check_mesh_nodes(meshinfo):
+def check_mesh_nodes(meshinfo:dict)->dict:
     '''
     check that all nodes used by elements, if not - delete unused nodes
     and change elements nodes indexes
@@ -111,12 +112,12 @@ def check_mesh_nodes(meshinfo):
             newmeshinfo['element'] = np.vstack((newmeshinfo['element'],np.array(tmp)))    
     return newmeshinfo
 
-def prepare_mesh(fpath, classes_list):
+def prepare_mesh(fpath:str, classes_list:dict)->dict:
     badmesh = load_mesh(fpath, classes_list)
     mesh = check_mesh_nodes(badmesh)
     return mesh
 
-def create_pyeit_model(meshinfo, Nelec):
+def create_pyeit_model(meshinfo:dict, Nelec:int)->PyEITMesh:
     '''
     create mesh object for pyeit from loaded meshinfo with equal spaced
     elctrodes
@@ -134,7 +135,7 @@ def create_pyeit_model(meshinfo, Nelec):
     mesh_obj.el_pos = np.array(electrode_nodes)
     return mesh_obj
 
-def prepare_data(borders, settings):
+def prepare_data(borders:dict, settings:Settings)->tuple[dict,npt.NDArray]:
     bordersf = {}
     maxArea = 0
     for tissue, elements in borders.items():
@@ -172,7 +173,7 @@ def prepare_data(borders, settings):
                         'pos' : 'edge1'}
     return (bordersf, elecs)
 
-def get_materials(path):
+def get_materials(path:str)->dict:
     '''
     returns dictionary with tissues conductivity and permitivity within frequency
     '''
@@ -198,7 +199,7 @@ def get_materials(path):
             materials[mat][param] = np.array(data)
     return materials
 
-def add_skin(data, width):
+def add_skin(data:npt.NDArray, width:float)->npt.NDArray:
     '''
     creates new polygone on distance 'width' from given
     https://math.stackexchange.com/questions/175896
@@ -213,7 +214,7 @@ def add_skin(data, width):
         skin = np.vstack([skin, [xt, yt]])
     return skin
 
-def get_electrodes_coords(data, Nelec, Relec):
+def get_electrodes_coords(data:npt.NDArray, Nelec:int, Relec:float)->npt.NDArray:
     '''
     find centeres and edges of flat electrodes
     Args:
@@ -270,7 +271,7 @@ def get_electrodes_coords(data, Nelec, Relec):
     elecs = np.array(elecs)
     return elecs
 
-def insert_electordes_to_polygone(polygone, elecs):
+def insert_electordes_to_polygone(polygone:npt.NDArray, elecs:npt.NDArray)->npt.NDArray:
     '''
     insert electrodes to skin polygone
     '''
@@ -303,7 +304,7 @@ def insert_electordes_to_polygone(polygone, elecs):
         out = np.insert(out, insidx, elecs[i, 0:2, :], axis = 0)
     return out
 
-def save_model(fname, Nprojections = 0, dirpath = ''):
+def save_model(fname:str, Nprojections = 0, dirpath = '')->list[str]:
     """
     if Nprojections != 0 - save currnet opened problem Nprojections times
     with unique names (projection number in name)
@@ -327,7 +328,7 @@ def save_model(fname, Nprojections = 0, dirpath = ''):
         femm.ci_saveas(fpaths[-1])
     return fpaths
 
-def create_femm_model(borders, settings, materials):
+def create_femm_model(borders:dict, settings:Settings, materials:dict)->npt.NDArray:
     '''
     Open FEMM and create new current flow FEMM problem, add countours, 
     add conductors and materials
