@@ -17,23 +17,17 @@ services:
     build:
       context: ./kt_service
       dockerfile: Dockerfile
-    runtime: nvidia
+    runtime: nvidia  
     ports:
       - "5001:5001"
     volumes:
       - ./kt_service:/app/kt_service
-      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so
-      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
-      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi
       - ./temp:/app/temp
       - ./weights:/app/weights
       - ./kt_service/imgs:/app/imgs
       - ./logs:/app/logs:rw,uid=1000,gid=1000
     environment:
       - IMGS_DIR=/app/imgs
-    devices:
-      - /dev/nvidiactl:/dev/nvidiactl
-      - /dev/nvidia0:/dev/nvidia0
     networks:
       - app-network
     depends_on:

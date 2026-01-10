@@ -30,9 +30,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class DICOMSequencesToMask(abc.ABC):
-    """Класс для автоматического поиска нужного среза из dicom-серии.
-       Является родителем для классов DICOMSequencesToMaskCustom, DICOMToMask, ImageToMask, NIIToMask
+class DICOMabc(abc.ABC):
+    """
 
     """
 
@@ -115,54 +114,60 @@ class DICOMSequencesToMask(abc.ABC):
     def _axial_slice_predict(self, axial_slice):
         """
         Выполняет сегментацию тканей тела на аксиальном срезе КТ с помощью предобученной модели.
-
-        Основные этапы работы:
-        1. Конвертирует цветовое пространство из BGR в RGB (требование модели)
-        2. Определяет размер среза и выбирает соответствующую модель (256 или 512)
-        3. Выполняет предсказание с заданными параметрами
-        4. Возвращает результаты сегментации и время выполнения
-
-        Args:
-            axial_slice (numpy.ndarray): Аксиальный срез КТ в формате BGR (синий, зеленый, красный)
-                                       Размерность: (H, W, 3), dtype: uint8
-
-        Returns:
-            tuple: Кортеж содержащий:
-                - results (ultralytics.engine.results.Results): Результаты детекции/сегментации модели
-                - segmentation_time (float): Время выполнения предсказания в секундах
-
-        Note:
-            - Использует GPU (device=0) для ускорения
-            - Порог уверенности (conf) = 0.3
-            - Размер входного изображения (imgsz) зависит от модели: 256 или 512
-            - Для корректной работы модели требуется конвертация в RGB
         """
         # Конвертируем из BGR в RGB
         axial_slice_rgb = cv2.cvtColor(axial_slice, cv2.COLOR_BGR2RGB)
-
-        # Получаем целевой размер изображения (например, 256 или 512)
+        
+        # Получаем целевой размер изображения
         axial_slice_size = get_axial_slice_size(axial_slice)
-
+        
         # Выбираем модель в зависимости от размера
         if axial_slice_size == 256:
             model = self.axial_model_256
         else:
             model = self.axial_model_512
-
+        
+        # Проверка доступности CUDA
+        import torch
+        logger.info(f"CUDA available: {torch.cuda.is_available()}")
+        logger.info(f"Current device: {torch.cuda.current_device()}")
+        logger.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
+        
         # Замер времени
         t1 = time.time()
-
-        # Предсказание
-        results = model(
-            axial_slice_rgb,
-            conf=0.3,
-            verbose=False,
-            device=0,
-            imgsz=axial_slice_size
-        )[0]
-
+        
+        # Предсказание с логированием
+        try:
+            results = model(
+                axial_slice_rgb,
+                conf=0.3,
+                verbose=False,
+                device='cuda:0',  # Явно указываем устройство
+                imgsz=axial_slice_size
+            )[0]
+            
+            # Проверяем, где выполнялся inference
+            if hasattr(results, 'boxes') and results.boxes is not None:
+                logger.info(f"Prediction completed on GPU")
+            elif hasattr(results, 'speed'):
+                logger.info(f"Inference speed: {results.speed}")
+                
+        except Exception as e:
+            logger.error(f"GPU inference failed: {e}")
+            # Fallback to CPU
+            logger.info("Trying CPU inference...")
+            results = model(
+                axial_slice_rgb,
+                conf=0.3,
+                verbose=False,
+                device='cpu',
+                imgsz=axial_slice_size
+            )[0]
+            logger.info("CPU inference completed")
+        
         segmentation_time = time.time() - t1
-
+        logger.info(f"Segmentation time: {segmentation_time:.2f} seconds")
+        
         return results, segmentation_time
 
     def _search_axial_slice(self, detections, i_slices, custom_number_slise=0):
@@ -185,6 +190,10 @@ class DICOMSequencesToMask(abc.ABC):
             axial_slice_list.append(i_slices[i])
         return axial_slice_list, number_slice_eit_list
 
+
+class DICOMSequencesToMask(DICOMabc):
+    """
+    """
     def get_coordinate_slice_from_dicom(self, zip_buffer):
         """
         Основная функция для получения координат биологических тканей из dicom-файла
@@ -381,7 +390,7 @@ class NIIToMask(DICOMSequencesToMask):
                     "message": "Processing completed successfully"}
         """
         ribs_annotated_image = None
-        pixel_spacing = [1, 1]
+        pixel_spacing = [0.662, 0.662]  # TODO не надо хардкодить
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
             nii_mean_slice = get_nii_mean_slice(zip_file)
             axial_slice_norm = classic_norm(nii_mean_slice)

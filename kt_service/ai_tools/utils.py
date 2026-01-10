@@ -113,12 +113,19 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
     Returns:
         sagittal_view: Набор фронтальных срезов без нормализации
     """
+    sagittal_view = None
+    
     # Перестановка осей для преобразования аксиального в сагиттальный вид
     if patient_position == 'FFS':
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
+        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
         sagittal_view = numpy.flipud(sagittal_view)
     elif patient_position == 'HFS':
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
+        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+    else:
+        # Значение по умолчанию для других позиций
+        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+        # Или можно выбросить исключение, если позиция не поддерживается:
+        # raise ValueError(f"Unsupported patient position: {patient_position}")
 
     # Коррекция на основе ImageOrientationPatient
     # Векторы ImageOrientationPatient описывают ориентацию строк и столбцов изображения
@@ -140,7 +147,6 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
                 sagittal_view = numpy.fliplr(sagittal_view)  # Переворот по горизонтали (левая сторона станет слева)
             if patient_orientation[1] == 'P':
                 sagittal_view = numpy.flipud(sagittal_view)  # Переворот по вертикали (задняя часть станет внизу)
-
     return sagittal_view
 
 
