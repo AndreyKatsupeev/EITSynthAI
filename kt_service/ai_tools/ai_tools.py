@@ -390,9 +390,9 @@ class NIIToMask(DICOMSequencesToMask):
                     "message": "Processing completed successfully"}
         """
         ribs_annotated_image = None
-        pixel_spacing = [0.662, 0.662]  # TODO не надо хардкодить
+        pixel_spacing = [0.662, 0.662]  
         with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
-            nii_mean_slice = get_nii_mean_slice(zip_file)
+            nii_mean_slice, pixel_spacing = get_nii_mean_slice(zip_file)
             axial_slice_norm = classic_norm(nii_mean_slice)
             axial_slice_norm = cv2.rotate(axial_slice_norm, cv2.ROTATE_180)
             only_body_mask = get_axial_slice_body_mask_nii(nii_mean_slice)

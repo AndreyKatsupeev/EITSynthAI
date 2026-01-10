@@ -66,7 +66,7 @@ if __name__ == "__main__":
     # Обработка загруженного файла
     if button_flag and uploaded_file is not None:
         st.write("Файл успешно загружен!")
-        with st.spinner('Обработка DICOM файлов...'):
+        with st.spinner('Обработка файлов...'):
             add_log(log_path, generation_mode, 'INFO')
             if generation_mode == "dicom_sequences_auto":
                 try:
