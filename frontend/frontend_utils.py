@@ -1,6 +1,9 @@
+import os
 import zipfile
 
+
 from io import BytesIO
+from loguru import logger
 
 
 def dicom_sequence_to_zip(uploaded_files, custom_input=None):
@@ -80,3 +83,17 @@ def nii_sequence_to_zip(uploaded_files):
                 # Добавляем каждый файл в архив
                 zip_file.writestr(uploaded_file.name, uploaded_file.getvalue())
     return zip_buffer
+
+
+def add_log(log_path, log_name, level_log):
+    """"""
+    full_log_name = os.path.join(log_path, f"{log_name}.log")
+    logger.add(
+        sink=full_log_name,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {file}:{line} | {message}",
+        level=level_log,
+        rotation="100 MB",  # Новый файл при >100 МБ
+        retention="7 days",  # Автоудаление старых
+        compression="zip",  # Сжатие старых файлов
+        enqueue=True  # Безопасность
+    )

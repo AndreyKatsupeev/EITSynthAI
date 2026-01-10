@@ -1,18 +1,24 @@
-
 import base64
+import os
 import requests
 import streamlit as st
 import time
 import io
 
+
+from datetime import datetime
 import frontend_config as config
 
 
 from PIL import Image
 
 
+from loguru import logger
 from frontend_utils import dicom_sequence_to_zip, dicom_sequence_custom_to_zip, dicom_frame_to_zip, \
-    image_axial_slice_to_zip, nii_sequence_to_zip
+    image_axial_slice_to_zip, nii_sequence_to_zip, add_log
+
+log_path = "logs/{time:YYYY}/{time:MM}/{time:DD}/"
+os.makedirs(os.path.dirname(log_path.format(time=datetime.now())), exist_ok=True)
 
 
 # Настройка страницы
@@ -40,7 +46,7 @@ with col2:
     * nii - Формат файла исследования .nii""")
 
 # Логотип в сайдбаре
-st.sidebar.image("logo.jpg", width="stretch")
+st.sidebar.image("logo.jpg", use_container_width=True)
 
 # Выбор маркера в сайдбаре
 generation_mode = st.sidebar.radio(
@@ -60,7 +66,8 @@ if __name__ == "__main__":
     # Обработка загруженного файла
     if button_flag and uploaded_file is not None:
         st.write("Файл успешно загружен!")
-        with st.spinner('Обработка DICOM файлов...'):
+        with st.spinner('Обработка файлов...'):
+            add_log(log_path, generation_mode, 'INFO')
             if generation_mode == "dicom_sequences_auto":
                 try:
                     dicom_zip = dicom_sequence_to_zip(uploaded_file)
@@ -78,14 +85,14 @@ if __name__ == "__main__":
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
-                            st.subheader("Результаты сегментации:")
+                            st.subheader("Визуализация результатов сегментации:")
                             st.text(result['text_data'])
 
                         # Отображаем изображение
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", width="stretch")
+                            st.image(img, caption="Визуализация результатов сегментации", use_container_width=True)
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -110,14 +117,14 @@ if __name__ == "__main__":
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
-                            st.subheader("Результаты сегментации:")
+                            st.subheader("Визуализация результатов сегментации:")
                             st.text(result['text_data'])
 
                         # Отображаем изображение
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", width="stretch")
+                            st.image(img, caption="Визуализация результатов сегментации", use_container_width=True)
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -142,14 +149,14 @@ if __name__ == "__main__":
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
-                            st.subheader("Результаты сегментации:")
+                            st.subheader("Визуализация результатов сегментации:")
                             st.text(result['text_data'])
 
                         # Отображаем изображение
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", width="stretch")
+                            st.image(img, caption="Визуализация результатов сегментации", use_container_width=True)
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -174,14 +181,14 @@ if __name__ == "__main__":
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
-                            st.subheader("Результаты сегментации:")
+                            st.subheader("Визуализация результатов сегментации:")
                             st.text(result['text_data'])
 
                         # Отображаем изображение
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", width="stretch")
+                            st.image(img, caption="Визуализация результатов сегментации", use_container_width=True)
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 
@@ -206,14 +213,14 @@ if __name__ == "__main__":
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
-                            st.subheader("Результаты сегментации:")
+                            st.subheader("Визуализация результатов сегментации:")
                             st.text(result['text_data'])
 
                         # Отображаем изображение
                         if 'image' in result:
                             img_bytes = base64.b64decode(result['image'].encode('utf-8'))
                             img = Image.open(io.BytesIO(img_bytes))
-                            st.image(img, caption="Результат сегментации", width="stretch")
+                            st.image(img, caption="Визуализация результатов сегментации", use_container_width=True)
                     else:
                         st.error(f"Ошибка обработки: {response.text}")
 

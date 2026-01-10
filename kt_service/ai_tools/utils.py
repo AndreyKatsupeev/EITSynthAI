@@ -113,12 +113,19 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
     Returns:
         sagittal_view: Набор фронтальных срезов без нормализации
     """
+    sagittal_view = None
+    
     # Перестановка осей для преобразования аксиального в сагиттальный вид
     if patient_position == 'FFS':
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
+        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
         sagittal_view = numpy.flipud(sagittal_view)
     elif patient_position == 'HFS':
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))  # Перестановка осей
+        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+    else:
+        # Значение по умолчанию для других позиций
+        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+        # Или можно выбросить исключение, если позиция не поддерживается:
+        # raise ValueError(f"Unsupported patient position: {patient_position}")
 
     # Коррекция на основе ImageOrientationPatient
     # Векторы ImageOrientationPatient описывают ориентацию строк и столбцов изображения
@@ -140,7 +147,6 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
                 sagittal_view = numpy.fliplr(sagittal_view)  # Переворот по горизонтали (левая сторона станет слева)
             if patient_orientation[1] == 'P':
                 sagittal_view = numpy.flipud(sagittal_view)  # Переворот по вертикали (задняя часть станет внизу)
-
     return sagittal_view
 
 
@@ -983,39 +989,47 @@ def get_nii_mean_slice(zip_file):
     Args:
         zip_file: ZIP-архив с NIfTI-файлами (.nii.gz)
     Returns:
-        Средний срез (после поворота на 90°)
+        tuple: (средний срез после поворота на 90°, pixel_spacing как список [dx, dy])
     """
-    # Проверяем наличие custom_input.txt
+    # Проверяем наличие custom_input.txt (не используется далее, но сохранено для совместимости)
     if 'custom_input.txt' in zip_file.namelist():
         with zip_file.open('custom_input.txt') as f:
-            custom_input = f.read().decode('utf-8').strip()
+            f.read().decode('utf-8').strip()  # Можно использовать позже, если нужно
 
     data = None
+    pixel_spacing = [0.662, 0.662]  # значение по умолчанию
 
-    # Ищем .nii.gz файлы (игнорируем .tar.gz)
     for file_name in zip_file.namelist():
         if file_name.lower().endswith('.nii.gz') and not file_name.lower().endswith('.tar.gz'):
             try:
                 with zip_file.open(file_name) as file:
-                    file_content = file.read()  # Читаем файл в память
+                    file_content = file.read()
 
-                    # Создаем временный файл
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.nii.gz') as tmp_file:
                         tmp_file.write(file_content)
                         tmp_file_path = tmp_file.name
 
-                    # Загружаем через nibabel
-                    nii_data = nib.load(tmp_file_path)
-                    data = nii_data.get_fdata().astype(numpy.int16)
+                    nii_img = nib.load(tmp_file_path)
+                    data = nii_img.get_fdata().astype(numpy.int16)
 
-                    # Удаляем временный файл
+                    # Извлекаем pixel spacing из заголовка
+                    header = nii_img.header
+                    pixdim = header.get('pixdim', None)
+                    if pixdim is not None and len(pixdim) >= 3:
+                        dx, dy = float(pixdim[1]), float(pixdim[2])
+                        # Проверяем корректность значений
+                        if dx > 0 and dy > 0:
+                            pixel_spacing = [dx, dy]
+
                     os.unlink(tmp_file_path)
-                    hu_data = data * 1.0 - 0  # slope=1, intercept=-1024
-                    slice_mean = int(hu_data.shape[-1] / 2)
-                    slise_save = hu_data[:, :, slice_mean]
+
+                    # Получаем средний срез
+                    slice_mean = int(data.shape[-1] / 2)
+                    slise_save = data[:, :, slice_mean]
                     slise_save = cv2.rotate(slise_save, cv2.ROTATE_90_CLOCKWISE)
 
                     break  # Обрабатываем первый подходящий файл
+
             except Exception as e:
                 print(f"Ошибка при обработке файла {file_name}: {str(e)}")
                 if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
@@ -1025,7 +1039,7 @@ def get_nii_mean_slice(zip_file):
     if data is None:
         raise ValueError("Не удалось загрузить NIfTI файл из архива")
 
-    return slise_save
+    return slise_save, pixel_spacing
 
 
 def get_pixel_spacing(dicom_data):
