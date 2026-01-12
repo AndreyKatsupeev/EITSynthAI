@@ -31,7 +31,7 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
    ```bash
    git clone git@github.com:AndreyKatsupeev/EITSynthAI.git
    
-2. **Скачать веса модели по [ссылке](https://github.com/user/repo/blob/branch/other_file.md)](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
+2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
 3. **Поместить веса в директорию weights/**
 4. **Из корня проекта запустить команду**
    ```bash
