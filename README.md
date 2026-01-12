@@ -33,9 +33,10 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
    
 2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
 3. **Поместить веса в директорию weights/**
-4. **Из корня проекта запустить команду**
+4. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**
+5. **Из корня проекта запустить команду**
    ```bash
    docker compose up --build -d
-5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
+6. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
 
-6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+7. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
