@@ -12,9 +12,10 @@ runs
 *.cu
 *.pdf
 *.lichense_plate_recognizer
-*.csv
 .pytest_cache
 config.json
+*.anc
+*.fec
 
 env
 .python-version
@@ -36,7 +37,6 @@ wandb
 *.bmp
 *.BMP
 *.cfg
-*.data
 *.heic
 *.HEIC
 *.h5
