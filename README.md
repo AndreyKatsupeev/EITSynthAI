@@ -36,7 +36,10 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 4. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**
 5. **Из корня проекта запустить команду**
    ```bash
+   wsl --update
+6. **Из корня проекта запустить команду**
+   ```bash
    docker compose up --build -d
-6. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
+7. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
 
-7. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+8. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
