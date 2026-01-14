@@ -1,0 +1,11 @@
+streamlit
+requests
+pandas
+numpy
+opencv-python-headless
+Pillow
+PyMuPDF
+dicttoxml
+pika
+beautifulsoup4
+pdfplumber

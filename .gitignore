@@ -77,6 +77,7 @@ wandb
 *ai_logs
 *save_test_masks
 *floor_predict
+!requirements.txt
 create_tree.py
 # dependencies
 node_modules
