@@ -151,7 +151,7 @@ streamlit==1.40.1
 stringcase==1.2.0
 supervisely==6.73.249
 supervision==0.25.1
-sympy==1.13.3
+sympy==1.13.1
 tenacity==9.0.0
 threadpoolctl==3.5.0
 tifffile==2023.7.10
@@ -159,15 +159,13 @@ toml==0.10.2
 tornado==6.4.2
 tqdm==4.67.0
 trimesh==4.5.0
-triton==3.0.0
 twine==4.0.2
 typing_extensions==4.12.2
 tzdata==2024.2
-ultralytics==8.3.143
-ultralytics-thop==2.0.11
 urllib3==2.2.2
 uvicorn==0.32.1
 uvloop==0.21.0
+ultralytics==8.3.143
 varname==0.13.5
 watchdog==4.0.2
 watchfiles==0.24.0
