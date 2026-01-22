@@ -1,7 +1,7 @@
 import sys, os, time
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
-import femm_generator
+import EITSynthAI.mesh_service.femm_generator as femm_generator
 
 def get_test_data():
     test_list1 = [

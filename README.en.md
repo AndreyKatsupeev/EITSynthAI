@@ -15,8 +15,6 @@ This library is designed to process tomographic images for medical research, ena
 - Python 3.8+  
 - Required libraries are listed in `requirements.txt`.
 
-# Now library is in early stages of development
-
 
 ## Contribution
 
@@ -37,6 +35,6 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 5. **Из корня проекта запустить команду**
    ```bash
    docker compose up --build -d
-7. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
+6. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
 
-8. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+7. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**

@@ -614,8 +614,8 @@ def add_skin(outer_segment, polygons, skin_width):
     # Return the index of the new contour
     return len(polygons) - 1, polygons
 
-def test_module():
-    test_list = [
+
+test_list = [
         '3 33 124 0 202 0 299 28 378 74 438 154 463 261 452 381 459 441 434 482 378 511 301 511 212 486 140 452 105 332 58 176 58 33 124',
         '0 249 417 237 417 235 419 234 419 233 420 226 420 226 425 238 425 238 420 239 419 240 419 241 418 246 418 247 417 249 417',
         '0 147 414 147 417 170 417 170 414 168 416 166 416 165 417 156 417 155 416 151 416 150 415 149 415 148 414 147 414',
@@ -685,13 +685,31 @@ def test_module():
         '2 380 114 336 114 314 124 297 141 280 185 245 214 246 231 292 241 308 255 312 230 326 228 340 210 328 258 346 274 325 268 318 283 308 282 304 346 264 386 265 396 351 405 398 383 428 339 442 300 447 238 437 224 430 171 380 114',
         '2 142 110 100 150 82 183 82 202 62 256 67 325 82 342 92 374 133 410 165 416 215 403 257 404 242 385 194 363 176 334 188 272 212 246 205 230 219 222 199 203 197 190 227 161 223 137 194 112 142 110']
 
-    create_mesh(['1', '1'], test_list,
-                7,
-                1.3, 0, True,
-                show_meshing_result_method="gmsh",
-                number_of_showed_class=3,
-                is_exporting_to_femm=True,
-                export_filename="tmp.txt")
+
+def test_module(polygons=None):
+    """
+    Test function
+    """
+    if polygons is None:
+        # Простой тестовый пример для игры
+        polygons = [
+            '0 0 0 500 0 500 500 0 500',  # внешний прямоугольник (фон)
+            '1 100 100 400 100 250 400',  # треугольник (тело)
+            '2 150 150 200 150 175 200',  # маленький треугольник (голова)
+            '3 120 80 130 80 125 90',  # очень маленький треугольник (деталь)
+        ]
+
+    try:
+        create_mesh(['1', '1'], polygons,
+                    7,
+                    1.3, 0, True,
+                    show_meshing_result_method="gmsh",
+                    number_of_showed_class=3,
+                    is_exporting_to_femm=True,
+                    export_filename="tmp.txt")
+        print("Mesh generation successful!")
+    except Exception as e:
+        print(f"Error in mesh generation: {e}")
 
 
 if __name__ == "__main__":
