@@ -1,42 +1,49 @@
-# Image Segmentation and Synthetic Dataset Generation Library  
+# EITSynthAI - Библиотека для сегментации изображений и генерации синтетических наборов данных
 
-This library is designed to process tomographic images for medical research, enabling segmentation of anatomical structures, finite element mesh generation, and synthetic dataset creation for Electrical Impedance Tomography (EIT).  
+Данная библиотека разработана для обработки томографических изображений медицинских исследований с сегментацией анатомических структур, генерации сетки конечных элементов и создания синтетических наборов данных для электроимпедансной томографии (ЭИТ).
 
-## Features  
-- **Segmentation**: Automatically segment tomographic images into human thoracic cavity organs.  
-- **Finite Element Mesh Generation**: Generate geometry and finite element meshes with predefined conductivity for FEMM software.  
-- **Synthetic Dataset Generation**: Create synthetic EIT datasets for scientific research and experimentation.  
+## Обзор проекта
 
-## Use Cases  
-- Medical research in EIT measurement analysis and synthetic dataset generation.  
-- Finite element model generation for industrial design, game engines, and simulation tasks.  
+Данная библиотека может быть применена в сфере медицинских исследований для анализа измерительных данных, полученных в результате электроимпедансной томографии, и генерации синтетических датасетов для проведения научных исследований методом ЭИТ. Разработанный для данной библиотеки подход с получением сетки конечных элементов на основе томографических изображений может быть применён в любых задачах, использующих конечные элементы: в частности, при проектировании промышленных устройств, разработке моделей для игровых движков. Направления прикладного использования следующие:
+- Автоматическая сегментация томографических изображений на органы грудной полости человека.
+- Генерация геометрии и конечно-элементных сеток с предопределенной проводимостью для программного обеспечения FEMM.
+- Создание синтетических наборов данных ЭИТ для научных исследований и экспериментов.
 
-## Requirements  
-- Python 3.8+  
-- Required libraries are listed in `requirements.txt`.
+## Требования к библиотеке 
 
-# Now library is in early stages of development
+- Python 3.8+
+- Pytorch 2.4+
+- Дополнительные зависимости, перечисленные в `requirements.txt`.
 
+## Технические характеристики ПК:
 
-## Contribution
+- аппаратная платформа, на которой может быть запущена 64-разрядная ОС Ubuntu версии 22.04 LTS или выше или Windows версии 10 и выше;
+- не менее 16 ГБ оперативной памяти;
+- восьмиядерный процессор x86 2.5 ГГц и выше или аналогичный ему;
+- видеокарта с поддержкой cuda 12.+, и не менее 8 ГБ видеопамяти;
+- не менее 100 ГБ свободного места на жёстком диске;
+- клавиатура и мышь (или тачпад).
 
-Contributions are welcome! Please create a pull request or submit an issue if you encounter problems or have ideas for improvement.
+## Установка
+В командной строке введите соответствующие команды:
 
-This project is funded by Foundation for Assistance to Small Innovative Enterprises in the Scientific and Technical Sphere, Russia, Moscow.
+`git clone https://github.com/AndreyKatsupeev/EITSynthAI.git`
+`cd EITSynthAI`
 
-# Инструкция по запуску проекта
-
-1. **Скопировать проект**  
-   Выполните команду:  
-   ```bash
-   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git
+## Использование
    
-2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
-3. **Поместить веса в директорию weights/**
-4. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**
-5. **Из корня проекта запустить команду**
+1. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
+2. **Поместить веса в директорию weights/**
+3. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**
+4. **Из корня проекта запустить команду**
    ```bash
    docker compose up --build -d
-7. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
+5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
+6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
 
-8. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+## Примеры использования
+
+Примеры использования приведены по [ссылке](EITSynthAI/mesh_service/examples/README.md)
+
+## Лицензия
+Библиотека полностью бесплатна для распространения и коммерциализации проектов на ее основе согласно лицензии GNU General Public License.
