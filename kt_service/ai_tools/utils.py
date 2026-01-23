@@ -949,13 +949,16 @@ def create_segmentation_results_cnt(axial_detections):
     return text
 
 
-def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time):
+def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time):
     """
     Формирует ответ для отправки клиенту, содержащий изображение и текстовые данные
 
     Args:
         segmentation_masks_full_image: изображение (numpy array)
         segmentation_results_cnt: текстовые данные (str)
+        segmentation_time: численные данные (float)
+        saved_file_name: строковые данные (str)
+        simulation_time: численные данные (float)
 
     Returns:
         dict: словарь с ответом, содержащим изображение в base64 и текст
@@ -977,6 +980,8 @@ def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segme
         "image": img_base64,
         "text_data": segmentation_results_cnt,
         "segmentation_time": segmentation_time,
+        "saved_file_name": saved_file_name,
+        "simulation_time": simulation_time,
         "status": "success",
         "message": "Processing completed successfully"
     }

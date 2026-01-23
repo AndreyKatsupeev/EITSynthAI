@@ -174,3 +174,5 @@ zipp==3.20.2
 zstd==1.5.5.1
 numpy==1.23.2
 loguru==0.7.3
+pyfemm==0.1.3
+pyeit==1.2.4

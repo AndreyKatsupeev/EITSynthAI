@@ -1,13 +1,15 @@
 # Modeling for generating synthetic datasets with FEMM
 import femm
-from .model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list
+import time
+from .model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list, prepare_mesh_from_femm_generator
 from .femm_api import *
 import numpy as np
 import numpy.typing as npt
 import os
 from concurrent.futures import ProcessPoolExecutor
-import pythoncom
+#import pythoncom
 import re
+import multiprocessing
 
 import pyeit.eit.protocol as protocol
 import math
@@ -96,7 +98,7 @@ def spirometry_to_conuctivity(sample:npt.NDArray, Freq:float, materials:dict, sp
     elif len(spir.shape) == 2:
         sp = spir[:,1]
     else:
-        raise ValueError('unsupported spiromtery data shape')
+        raise ValueError('unsupported spirometry data shape')
     def_c = get_material_data_freq(materials['lung']['cond'],Freq)
     inf_c = get_material_data_freq(materials['lung']['infl'],Freq)
     spiramp = max(sp) - min(sp)
@@ -217,14 +219,46 @@ def calculate_EIT_slice_femm_fast(fullfpath:str, elecs:npt.NDArray, tissue_props
     femm.closefemm()
 
 def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, Nelec:int)->npt.NDArray:
+    """
+        Compute the EIT voltage projection for a given conductivity distribution.
+
+        The function creates a PyEIT forward model, assigns conductivities to mesh
+        elements based on material classes, constructs a standard adjacent
+        stimulation/measurement protocol, and solves the forward EIT problem.
+
+        :param meshinfo: dict, mesh description prepared by
+                         prepare_mesh_from_femm_generator
+        :param classes_vals: dict[str, float], conductivity values per class
+        :param Nelec: int, number of electrodes
+        :return: np.ndarray, simulated EIT voltage measurements
+        """
     mesh_obj = create_pyeit_model(meshinfo, Nelec)
-    cond = meshinfo['cond']
-    for class_name, class_idx in meshinfo['classes_gr'].items():
-        cond[class_idx] = classes_vals[class_name]
-    protocol_obj = protocol.create(Nelec, dist_exc=1, step_meas=1, parser_meas="meas_current")
+    cond = meshinfo['cond'].astype(float)
+    for class_name, class_elements in meshinfo['classes_gr'].items():
+        for class_idx in class_elements:
+            cond[class_idx] = float(classes_vals[class_name])
+    protocol_obj = protocol.create(Nelec, dist_exc=1, step_meas=1, parser_meas="std")
     fwd = EITForward(mesh_obj, protocol_obj)
     v = fwd.solve_eit(perm=cond)
     return v
+
+def process_EIT_projection(line, classes_vals, meshinfo, N_elec):
+    """
+        Wrapper function for multiprocessing-based EIT projection computation.
+
+        This function updates lung conductivity for a single time step and
+        computes the corresponding EIT projection. Intended to be used with
+        multiprocessing.Pool.
+
+        :param line: array-like, one row of conductivity evolution data
+        :param classes_vals: dict[str, float], base conductivity values per class
+        :param meshinfo: dict, mesh description
+        :param N_elec: int, number of electrodes
+        :return: np.ndarray, simulated EIT voltage measurements
+        """
+    classes_vals_local = classes_vals.copy()
+    classes_vals_local['lung'] = line[1]
+    return calculate_EIT_projection_pyeit(meshinfo, classes_vals_local, N_elec)
 
 def simulate_EIT_femm(fpath:list[str], elecs:npt.NDArray, tissue_props:dict, V:npt.NDArray)->npt.NDArray:
     '''
@@ -265,6 +299,46 @@ def simulate_EIT_monitoring(fpath:list[str], condspir:npt.NDArray, elecs:npt.NDA
     tissue_props = {'lung' : {'cond' : condspir[:, 1]}}
     V = simulate_EIT_femm(fpath, elecs, tissue_props, V)
     return V
+
+def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, N_minutes=1, isSaveToFile=False, filename=None, materials_location="../femm_tools"):
+    """
+    Simulate EIT monitoring with time-varying lung conductivity.
+
+    The function generates a spirometry-based conductivity evolution,
+    computes EIT projections for each time step using multiprocessing,
+    and optionally saves the results to a text file.
+
+    :param meshdata: dict, FEMM-generated mesh data
+    :param N_elec: int, number of electrodes
+    :param N_spir: int, number of spirometry cycles
+    :param N_points: int, number of points per cycle
+    :param N_minutes: int, total duration in minutes
+    :param isSaveToFile: bool, whether to save results to file
+    :param filename: str or None, output file path
+    :param materials_location: str or None, path to materials location
+    :return: tuple:
+        - v: list[np.ndarray], EIT voltage projections over time
+        - dataset_generation_time: float, total simulation time in seconds
+    """
+    t1 = time.time()
+    meshinfo = prepare_mesh_from_femm_generator(meshdata)
+    materials = get_materials(materials_location)
+    Freq = 50000
+    dataf = make_spirometry(N_spir, N_points)
+    spir = dataf[:, 1] * 1.5
+    condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
+    classes_vals = class_to_cond(materials, Freq, classes_list)
+    task_args = [(line, classes_vals, meshinfo, N_elec) for line in condspir]
+    with multiprocessing.Pool() as pool:
+        v = pool.starmap(process_EIT_projection, task_args)
+    if isSaveToFile is True and filename is not None:
+        with open(filename, "w") as f:
+            for i in range(N_points*N_minutes):
+                for arr in v:
+                    arr = np.asarray(arr).ravel()
+                    np.savetxt(f, arr[None, :])
+    dataset_generation_time = time.time() - t1
+    return v, dataset_generation_time
 
 def test_module():
     import time

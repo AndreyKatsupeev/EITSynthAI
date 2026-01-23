@@ -17,7 +17,6 @@ services:
     build:
       context: ./kt_service
       dockerfile: Dockerfile
-    runtime: nvidia  
     ports:
       - "5001:5001"
     volumes:
@@ -26,23 +25,13 @@ services:
       - ./weights:/app/weights
       - ./kt_service/imgs:/app/imgs
       - ./logs:/app/logs:rw,uid=1000,gid=1000
+      - ./generation_results:/app/generation_results
     environment:
       - IMGS_DIR=/app/imgs
     networks:
       - app-network
     depends_on:
       - frontend
-    deploy:
-      replicas: 1
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 16g
-          cpus: '4.0'
 
 networks:
   app-network:
