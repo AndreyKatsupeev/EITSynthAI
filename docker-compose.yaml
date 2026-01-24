@@ -12,7 +12,6 @@ services:
       - app-network
 
   kt_service:
-    shm_size: 20g
     restart: always
     build:
       context: ./kt_service
@@ -20,14 +19,14 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - ./kt_service:/app/kt_service
+      - ./kt_service:/app/kt_service  
       - ./temp:/app/temp
       - ./weights:/app/weights
-      - ./kt_service/imgs:/app/imgs
+      - ./kt_service/imgs:/app/imgs 
       - ./logs:/app/logs:rw,uid=1000,gid=1000
       - ./generation_results:/app/generation_results
     environment:
-      - IMGS_DIR=/app/imgs
+      - IMGSDIR=/app/imgs
     networks:
       - app-network
     depends_on:
@@ -36,3 +35,4 @@ services:
 networks:
   app-network:
     driver: bridge
+

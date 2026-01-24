@@ -4,6 +4,6 @@
 
 
 [ai_settings]
-    device = "cuda"
+    device = ""
     weights_ribs = '/'
     weights_segmentation = '/'

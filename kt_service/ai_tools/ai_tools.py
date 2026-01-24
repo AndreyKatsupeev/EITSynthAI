@@ -109,7 +109,7 @@ class DICOMabc(abc.ABC):
 
         """
         front_slice = cv2.cvtColor(front_slice, cv2.COLOR_BGR2RGB)
-        results = self.ribs_model(front_slice, conf=0.3, verbose=False, device=0, show_conf=False,
+        results = self.ribs_model(front_slice, conf=0.3, verbose=False, show_conf=False,
                                   show_labels=False)
         detections = sv.Detections.from_ultralytics(results[0])
         return detections
@@ -145,15 +145,11 @@ class DICOMabc(abc.ABC):
                 axial_slice_rgb,
                 conf=0.3,
                 verbose=False,
-                device='cuda:0',  # Явно указываем устройство
                 imgsz=axial_slice_size
             )[0]
             
-            # Проверяем, где выполнялся inference
-            if hasattr(results, 'boxes') and results.boxes is not None:
-                logger.info(f"Prediction completed on GPU")
-            elif hasattr(results, 'speed'):
-                logger.info(f"Inference speed: {results.speed}")
+
+            logger.info(f"Inference speed: {results.speed}")
                 
         except Exception as e:
             logger.error(f"GPU inference failed: {e}")
@@ -163,7 +159,6 @@ class DICOMabc(abc.ABC):
                 axial_slice_rgb,
                 conf=0.3,
                 verbose=False,
-                device='cpu',
                 imgsz=axial_slice_size
             )[0]
             logger.info("CPU inference completed")
