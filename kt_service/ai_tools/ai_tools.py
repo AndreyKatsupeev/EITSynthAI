@@ -27,7 +27,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from .. import kt_service_config
 import zipfile
-
+import torch
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class DICOMabc(abc.ABC):
 
         """
         front_slice = cv2.cvtColor(front_slice, cv2.COLOR_BGR2RGB)
-        results = self.ribs_model(front_slice, conf=0.3, verbose=False, device=0, show_conf=False,
+        results = self.ribs_model(front_slice, conf=0.3, verbose=False, show_conf=False,
                                   show_labels=False)
         detections = sv.Detections.from_ultralytics(results[0])
         return detections
@@ -126,14 +126,13 @@ class DICOMabc(abc.ABC):
         
         # Выбираем модель в зависимости от размера
         if axial_slice_size == 256:
+            logger.info(f"Выбрана модель на разрешение 256")
             model = self.axial_model_256
         else:
+            logger.info(f"Выбрана модель на разрешение 512")
             model = self.axial_model_512
         
         # Проверка доступности CUDA
-        import torch
-        logger.info(f"CUDA available: {torch.cuda.is_available()}")
-        #logger.info(f"Current device: {torch.cuda.current_device()}")
         logger.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
         
         # Замер времени
@@ -145,16 +144,8 @@ class DICOMabc(abc.ABC):
                 axial_slice_rgb,
                 conf=0.3,
                 verbose=False,
-                device='cuda:0',  # Явно указываем устройство
                 imgsz=axial_slice_size
-            )[0]
-            
-            # Проверяем, где выполнялся inference
-            if hasattr(results, 'boxes') and results.boxes is not None:
-                logger.info(f"Prediction completed on GPU")
-            elif hasattr(results, 'speed'):
-                logger.info(f"Inference speed: {results.speed}")
-                
+            )[0]                
         except Exception as e:
             logger.error(f"GPU inference failed: {e}")
             # Fallback to CPU
@@ -163,13 +154,12 @@ class DICOMabc(abc.ABC):
                 axial_slice_rgb,
                 conf=0.3,
                 verbose=False,
-                device='cpu',
                 imgsz=axial_slice_size
             )[0]
             logger.info("CPU inference completed")
         
-        segmentation_time = time.time() - t1
-        logger.info(f"Segmentation time: {segmentation_time:.2f} seconds")
+        segmentation_time = round(time.time() - t1, 3)
+        logger.info(f"Время сегментации: {segmentation_time:.2f} seconds")
         
         return results, segmentation_time
 
@@ -214,7 +204,6 @@ class DICOMSequencesToMask(DICOMabc):
         """
         img_mesh = None
         front_slice, img_3d, i_slices, _ = self._search_front_slise(zip_buffer)
-
         ribs_detections = self._ribs_predict(front_slice)
         axial_slice, number_slice_eit_list = self._search_axial_slice(ribs_detections, i_slices)
         axial_slice_norm = classic_norm(axial_slice[-1].pixel_array)
@@ -254,7 +243,10 @@ class DICOMSequencesToMask(DICOMabc):
             """
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"/app/generation_results/results_{ts}.dat"
+        logger.info(f"Начало simulate_EIT_monitoring_pyeit")
         simulation_results, simulation_time = simulate_EIT_monitoring_pyeit(meshdata, isSaveToFile=True, filename=filename, materials_location="/app/kt_service/ai_tools/femm_tools")
+        logger.info(f"Конец simulate_EIT_monitoring_pyeit")
+
         return simulation_results, filename, simulation_time
 
 
