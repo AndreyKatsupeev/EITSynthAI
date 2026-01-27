@@ -218,7 +218,7 @@ def calculate_EIT_slice_femm_fast(fullfpath:str, elecs:npt.NDArray, tissue_props
     femm_set_elec_state('None', elecs[idx, 2])
     femm.closefemm()
 
-def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, Nelec:int)->npt.NDArray:
+def calculate_EIT_projection_pyeit(mesh_obj, meshinfo:dict, classes_vals:dict, Nelec:int)->npt.NDArray:
     """
         Compute the EIT voltage projection for a given conductivity distribution.
 
@@ -232,7 +232,6 @@ def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, Nelec:int)-
         :param Nelec: int, number of electrodes
         :return: np.ndarray, simulated EIT voltage measurements
         """
-    mesh_obj = create_pyeit_model(meshinfo, Nelec)
     cond = meshinfo['cond'].astype(float)
     for class_name, class_elements in meshinfo['classes_gr'].items():
         for class_idx in class_elements:
@@ -242,7 +241,7 @@ def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, Nelec:int)-
     v = fwd.solve_eit(perm=cond)
     return v
 
-def process_EIT_projection(line, classes_vals, meshinfo, N_elec):
+def process_EIT_projection(line, classes_vals, mesh_obj, meshinfo, N_elec):
     """
         Wrapper function for multiprocessing-based EIT projection computation.
 
@@ -258,7 +257,7 @@ def process_EIT_projection(line, classes_vals, meshinfo, N_elec):
         """
     classes_vals_local = classes_vals.copy()
     classes_vals_local['lung'] = line[1]
-    return calculate_EIT_projection_pyeit(meshinfo, classes_vals_local, N_elec)
+    return calculate_EIT_projection_pyeit(mesh_obj, meshinfo, classes_vals_local, N_elec)
 
 def simulate_EIT_femm(fpath:list[str], elecs:npt.NDArray, tissue_props:dict, V:npt.NDArray)->npt.NDArray:
     '''
@@ -300,7 +299,7 @@ def simulate_EIT_monitoring(fpath:list[str], condspir:npt.NDArray, elecs:npt.NDA
     V = simulate_EIT_femm(fpath, elecs, tissue_props, V)
     return V
 
-def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=50, N_minutes=1, isSaveToFile=False, filename=None, materials_location="../femm_tools"):
+def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, N_minutes=1, isSaveToFile=False, filename=None, materials_location="../femm_tools"):
     """
     Simulate EIT monitoring with time-varying lung conductivity.
 
@@ -328,7 +327,8 @@ def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=50, N
     spir = dataf[:, 1] * 1.5
     condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
     classes_vals = class_to_cond(materials, Freq, classes_list)
-    task_args = [(line, classes_vals, meshinfo, N_elec) for line in condspir]
+    mesh_obj = create_pyeit_model(meshinfo, N_elec)
+    task_args = [(line, classes_vals, mesh_obj, meshinfo, N_elec) for line in condspir]
     with multiprocessing.Pool() as pool:
         v = pool.starmap(process_EIT_projection, task_args)
     if isSaveToFile is True and filename is not None:
