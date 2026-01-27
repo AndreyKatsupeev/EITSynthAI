@@ -329,8 +329,10 @@ def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, 
     classes_vals = class_to_cond(materials, Freq, classes_list)
     mesh_obj = create_pyeit_model(meshinfo, N_elec)
     task_args = [(line, classes_vals, mesh_obj, meshinfo, N_elec) for line in condspir]
-    with multiprocessing.Pool() as pool:
-        v = pool.starmap(process_EIT_projection, task_args)
+    for line in condspir:
+        v = process_EIT_projection(line, classes_vals, mesh_obj, meshinfo, N_elec)
+    #with multiprocessing.Pool() as pool:
+        #v = pool.starmap(process_EIT_projection, task_args)
     if isSaveToFile is True and filename is not None:
         with open(filename, "w") as f:
             for i in range(N_points*N_minutes):
