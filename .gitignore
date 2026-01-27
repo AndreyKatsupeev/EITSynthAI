@@ -97,4 +97,4 @@ _backend/data/*
 _backend/cent_config.json
 !_backend/requirements/*
 
-generation_results/*
+generation_results/
