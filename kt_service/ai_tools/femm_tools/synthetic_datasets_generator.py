@@ -218,7 +218,7 @@ def calculate_EIT_slice_femm_fast(fullfpath:str, elecs:npt.NDArray, tissue_props
     femm_set_elec_state('None', elecs[idx, 2])
     femm.closefemm()
 
-def calculate_EIT_projection_pyeit(mesh_obj, meshinfo:dict, classes_vals:dict, Nelec:int)->npt.NDArray:
+def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, fwd)->npt.NDArray:
     """
         Compute the EIT voltage projection for a given conductivity distribution.
 
@@ -236,12 +236,10 @@ def calculate_EIT_projection_pyeit(mesh_obj, meshinfo:dict, classes_vals:dict, N
     for class_name, class_elements in meshinfo['classes_gr'].items():
         for class_idx in class_elements:
             cond[class_idx] = float(classes_vals[class_name])
-    protocol_obj = protocol.create(Nelec, dist_exc=1, step_meas=1, parser_meas="std")
-    fwd = EITForward(mesh_obj, protocol_obj)
     v = fwd.solve_eit(perm=cond)
     return v
 
-def process_EIT_projection(line, classes_vals, mesh_obj, meshinfo, N_elec):
+def process_EIT_projection(line, classes_vals, meshinfo, fwd):
     """
         Wrapper function for multiprocessing-based EIT projection computation.
 
@@ -257,7 +255,7 @@ def process_EIT_projection(line, classes_vals, mesh_obj, meshinfo, N_elec):
         """
     classes_vals_local = classes_vals.copy()
     classes_vals_local['lung'] = line[1]
-    return calculate_EIT_projection_pyeit(mesh_obj, meshinfo, classes_vals_local, N_elec)
+    return calculate_EIT_projection_pyeit(meshinfo, classes_vals_local, fwd)
 
 def simulate_EIT_femm(fpath:list[str], elecs:npt.NDArray, tissue_props:dict, V:npt.NDArray)->npt.NDArray:
     '''
@@ -328,11 +326,11 @@ def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, 
     condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
     classes_vals = class_to_cond(materials, Freq, classes_list)
     mesh_obj = create_pyeit_model(meshinfo, N_elec)
-    task_args = [(line, classes_vals, mesh_obj, meshinfo, N_elec) for line in condspir]
-    for line in condspir:
-        v = process_EIT_projection(line, classes_vals, mesh_obj, meshinfo, N_elec)
-    #with multiprocessing.Pool() as pool:
-        #v = pool.starmap(process_EIT_projection, task_args)
+    protocol_obj = protocol.create(N_elec, dist_exc=1, step_meas=1, parser_meas="std")
+    fwd = EITForward(mesh_obj, protocol_obj)
+    task_args = [(line, classes_vals, meshinfo, fwd) for line in condspir]
+    with multiprocessing.Pool() as pool:
+        v = pool.starmap(process_EIT_projection, task_args)
     if isSaveToFile is True and filename is not None:
         with open(filename, "w") as f:
             for i in range(N_points*N_minutes):
