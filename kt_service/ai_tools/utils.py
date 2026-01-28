@@ -1190,7 +1190,7 @@ def create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mas
     # Добавляем значения pixel_spacing в начало списка
     result.insert(0, str(pixel_spacing[1]))  # spacing_y
     result.insert(0, str(pixel_spacing[0]))  # spacing_x
-    logger.info(f"result {result}")
+    #logger.info(f"result {result}")
 
     return result
 

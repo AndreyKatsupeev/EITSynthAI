@@ -1,7 +1,8 @@
 # Finite element mesh generator for FEMM
 import gmsh
 import numpy as np
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, MultiPolygon, Point
+from shapely.ops import unary_union
 import shapely.errors
 import cv2
 import multiprocessing
@@ -55,6 +56,8 @@ def divide_triangles_into_groups(contours, outer_contour_class, outer_contour, s
             k -= 1
     end_time = time.time()
     print(f"Noise removal time: {end_time - start_time:.6f} seconds")
+    contours = build_polygons_with_area(contours)
+    contours = sorted(contours, key=lambda x: x[2])
     # Retrieve all 2D elements (triangles)
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
     # Get all mesh nodes and their coordinates
@@ -81,6 +84,36 @@ def divide_triangles_into_groups(contours, outer_contour_class, outer_contour, s
             gmsh.model.setPhysicalName(2, group, f"Class_{class_id}")
     return class_groups
 
+
+def build_polygons_with_area(polygons):
+    """
+    Converts segmentation contours into Shapely polygons and computes their areas.
+
+    Parameters
+    ----------
+    polygons : list[str]
+        Format: 'class_id x1 y1 x2 y2 ... xn yn'
+
+    Returns
+    -------
+    list of tuples:
+        [(polygon, class_id, area), ...]
+    """
+    result = []
+    for line in polygons:
+        class_id = int(line[0])
+        coords = line[1:]
+        try:
+            points = [(float(coords[i]), float(coords[i+1]))
+                      for i in range(0, len(coords), 2)]
+            if points[0] != points[-1]:
+                points.append(points[0])
+            poly = Polygon(points)
+            result.append((poly, class_id, poly.area))
+        except (ValueError, shapely.errors.TopologicalError):
+            continue
+    return result
+
 def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class, outer_contour, skin_width):
     """
             Determines the most appropriate class for a triangle based on maximum area of intersection with given contours.
@@ -97,7 +130,7 @@ def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class, o
             nodes (List[int]): Flat list of node indices, with 3 indices per triangle.
             node_dict (Dict[int, Tuple[float, float]]): Mapping from node index to (x, y) coordinate.
             tags (List[int]): List of triangle identifiers (e.g., element tags) indexed by triangle.
-            contours (List[List[float]]): List of contours, where each contour starts with a class label
+            contours (List(Polygon in Shapely, class_number, area of contour)): List of contours
             followed by flat (x1, y1, x2, y2, ...) coordinates.
             outer_contour_class (Any): Default class to assign if no intersection is found.
             outer_contour: list
@@ -126,18 +159,27 @@ def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class, o
                 return 4, tags[i]
     max_intersection = 0
     best_class = outer_contour_class
+    triangle_poly = Polygon(triangle)
+    triangle_area = triangle_poly.area
+    centroid = triangle_poly.centroid
     # Compare triangle with all contours
     for j in range(len(contours)):
-        contour_class = contours[j][0]
-        contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
-        contour_poly = Polygon(contour_points)
-        try:
-            intersection = Polygon(triangle).intersection(contour_poly).area
-            if intersection > max_intersection:
-                max_intersection = intersection
-                best_class = contour_class
-        except:
-            pass
+        contour_class = contours[j][1]
+        if int(contour_class)!=outer_contour_class:
+            contour_poly = contours[j][0]
+            try:
+                if contour_poly.contains(centroid):
+                    best_class = contour_class
+                    break
+                inter = triangle_poly.intersection(contour_poly).area
+                if inter / triangle_area > 0.5:
+                    best_class = contour_class
+                    break
+                if inter>max_intersection:
+                    max_intersection = inter
+                    best_class = contour_class
+            except:
+                pass
     return best_class, tags[i]
 
 
@@ -322,7 +364,7 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     return img
 
 
-def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_width = 0, is_show_inner_contours=False,
+def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_width = 1, is_show_inner_contours=False,
                 show_meshing_result_method="opencv",
                 number_of_showed_class=-1, is_saving_to_file=False, export_filename=None):
     """
@@ -343,7 +385,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_widt
     distance_threshold : float, optional (default=1.3)
         Distance threshold used when merging collinear segments in the contour.
 
-    skin_width: float, optional (default=7)
+    skin_width: float, optional (default=1)
         Width of skin to be added. If value is 0, no skin will be added
         If value is -1, innermost finite elements will be considered as skin
         Otherwise outer contour with specified width will be added
@@ -402,12 +444,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_widt
     outer_contour = None
     outer_contour_class = None
     outer_segment_area = None
-    #Not counting the polygon not defining the class data
-    for polygon in polygons:
-        if polygon[0]=='4':
-            polygons.remove(polygon)
-            break
-    outer_segment = largest_segment_area_index(polygons)
+    outer_segment = find_outer_contour(polygons)
     if skin_width>0:
         outer_segment, polygons = add_skin(outer_segment, polygons, skin_width)
     for k in range(len(polygons)):
@@ -506,6 +543,76 @@ def largest_segment_area_index(polygons):
 
     return max_index
 
+
+def find_outer_contour(polygons):
+    """
+        Determines the index (line number) of the contour with the largest area in the input file.
+
+        Parameters:
+        -----------
+        polygons: List containing contour data.
+            Each line should represent a contour in the format:
+            <class_id> x1 y1 x2 y2 ... xn yn. Example:
+            ['3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390',
+               '3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390', ...]
+
+        Returns:
+        --------
+        int
+            The index (starting from 0) of the line representing the largest area polygon.
+            Returns -1 if no valid polygons are found.
+
+        Notes:
+        ------
+        - The function ignores lines with an odd number of coordinates (invalid pairs).
+        - Polygons are closed automatically if the first and last points do not match.
+        - Lines that cause parsing errors or contain invalid geometries are skipped.
+        - Uses Shapely to calculate polygon areas.
+
+        Exceptions:
+        -----------
+        - Lines that fail due to incorrect float conversion or topological issues in Shapely
+          are safely skipped.
+        """
+    #If we have class 4 in segmentation results than this is outer contour
+    for idx, line in enumerate(polygons, start=0):
+        if line[0]=='4':
+            return idx
+
+    shapes = []
+    for line in polygons:
+        parts = line.strip().split()
+        coords = parts[1:]
+        if len(coords) < 6 or len(coords) % 2 != 0:
+            continue
+        try:
+            points = [(float(coords[i]), float(coords[i + 1]))
+                      for i in range(0, len(coords), 2)]
+            if points[0] != points[-1]:
+                points.append(points[0])
+            poly = Polygon(points)
+            if poly.is_valid and poly.area > 0:
+                shapes.append(poly)
+        except (ValueError, shapely.errors.TopologicalError):
+            continue
+    if not shapes:
+        return None
+    merged = unary_union(shapes)
+
+    # If result is MultiPolygon, we take outer contour from each
+    if isinstance(merged, MultiPolygon):
+        main_poly = max(merged.geoms, key=lambda p: p.area)
+    else:
+        main_poly = merged
+    outer_boundary = main_poly.exterior
+    coords = list(outer_boundary.coords)
+    parts = ['4']
+    for x, y in coords:
+        parts.append(str(x))
+        parts.append(str(y))
+    new_line = " ".join(parts)
+    polygons.append(new_line)
+    return len(polygons) - 1
 
 def merge_collinear_segments(contour, distance_threshold=1.3):
     """
@@ -699,7 +806,7 @@ def test_module():
 
     create_mesh(['1', '1'], test_list,
                 7,
-                1.3, 0, True,
+                1.3, 1, True,
                 show_meshing_result_method="gmsh",
                 number_of_showed_class=3,
                 is_saving_to_file=True,

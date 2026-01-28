@@ -297,7 +297,7 @@ def simulate_EIT_monitoring(fpath:list[str], condspir:npt.NDArray, elecs:npt.NDA
     V = simulate_EIT_femm(fpath, elecs, tissue_props, V)
     return V
 
-def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=20, N_minutes=1, isSaveToFile=False, filename=None, materials_location="../femm_tools"):
+def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, N_minutes=1, isSaveToFile=False, filename=None, materials_location="../femm_tools"):
     """
     Simulate EIT monitoring with time-varying lung conductivity.
 
