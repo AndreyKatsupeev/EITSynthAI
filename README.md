@@ -47,7 +47,7 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
    docker compose up --build -d
 8. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
 
-9. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+9. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**
 
 
 ## Под системой Linux
@@ -65,4 +65,4 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
    ```bash
    docker compose up --build -d
 5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
-6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**
