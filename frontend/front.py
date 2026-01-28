@@ -82,6 +82,8 @@ if __name__ == "__main__":
                         # Отображаем время выполнения
                         st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
                         st.success(f"Время сегментации {result['segmentation_time']} c")
+                        st.success(f"Время генерации синтетического датасета {result['simulation_time']} c")
+                        st.success(f"Синтетический датасет выгружен в файл {result['saved_file_name']}")
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
@@ -114,6 +116,8 @@ if __name__ == "__main__":
                         # Отображаем время выполнения
                         st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
                         st.success(f"Время сегментации {result['segmentation_time']} c")
+                        st.success(f"Время генерации синтетического датасета {result['simulation_time']} c")
+                        st.success(f"Синтетический датасет выгружен в файл {result['saved_file_name']}")
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
@@ -146,6 +150,8 @@ if __name__ == "__main__":
                         # Отображаем время выполнения
                         st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
                         st.success(f"Время сегментации {result['segmentation_time']} c")
+                        st.success(f"Время генерации синтетического датасета {result['simulation_time']} c")
+                        st.success(f"Синтетический датасет выгружен в файл {result['saved_file_name']}")
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
@@ -178,6 +184,8 @@ if __name__ == "__main__":
                         # Отображаем время выполнения
                         st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
                         st.success(f"Время сегментации {result['segmentation_time']} c")
+                        st.success(f"Время генерации синтетического датасета {result['simulation_time']} c")
+                        st.success(f"Синтетический датасет выгружен в файл {result['saved_file_name']}")
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:
@@ -210,6 +218,8 @@ if __name__ == "__main__":
                         # Отображаем время выполнения
                         st.success(f"Обработка завершена за {result.get('execution_time', int(t_finish))} с")
                         st.success(f"Время сегментации {result['segmentation_time']} c")
+                        st.success(f"Время генерации синтетического датасета {result['simulation_time']} c")
+                        st.success(f"Синтетический датасет выгружен в файл {result['saved_file_name']}")
 
                         # Отображаем текстовые данные
                         if 'text_data' in result:

@@ -1,14 +1,15 @@
 # Finite element mesh generator for FEMM
 import gmsh
 import numpy as np
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon, Point
+from shapely.ops import unary_union
 import shapely.errors
 import cv2
 import multiprocessing
 import time
 
 
-def divide_triangles_into_groups(contours, outer_contour_class):
+def divide_triangles_into_groups(contours, outer_contour_class, outer_contour, skin_width):
     """
         Divides 2D triangular mesh elements into classes based on intersection with given contours.
 
@@ -22,6 +23,14 @@ def divide_triangles_into_groups(contours, outer_contour_class):
 
         outer_contour_class: integer
         number of class which includes all elements not divided into another segments
+
+        outer_contour: list
+        Contains the data of outer contour in the same format as contours parameter
+
+        skin_width: float, optional (default=7)
+        Width of skin to be added. If value is 0, no skin will be added
+        If value is -1, innermost finite elements will be considered as skin
+        Otherwise outer contour with specified width will be added
 
         Returns:
         --------
@@ -47,6 +56,8 @@ def divide_triangles_into_groups(contours, outer_contour_class):
             k -= 1
     end_time = time.time()
     print(f"Noise removal time: {end_time - start_time:.6f} seconds")
+    contours = build_polygons_with_area(contours)
+    contours = sorted(contours, key=lambda x: x[2])
     # Retrieve all 2D elements (triangles)
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
     # Get all mesh nodes and their coordinates
@@ -57,7 +68,7 @@ def divide_triangles_into_groups(contours, outer_contour_class):
     for elem_type, tags, nodes in zip(elem_types, elem_tags, elem_node_tags):
         if elem_type == 2:  # Element type 2 corresponds to triangles
             task_args = [
-                (i, nodes, node_dict, tags, contours, outer_contour_class)
+                (i, nodes, node_dict, tags, contours, outer_contour_class, outer_contour, skin_width)
                 for i in range(len(tags))
             ]
             # Parallel execution
@@ -73,7 +84,37 @@ def divide_triangles_into_groups(contours, outer_contour_class):
             gmsh.model.setPhysicalName(2, group, f"Class_{class_id}")
     return class_groups
 
-def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class):
+
+def build_polygons_with_area(polygons):
+    """
+    Converts segmentation contours into Shapely polygons and computes their areas.
+
+    Parameters
+    ----------
+    polygons : list[str]
+        Format: 'class_id x1 y1 x2 y2 ... xn yn'
+
+    Returns
+    -------
+    list of tuples:
+        [(polygon, class_id, area), ...]
+    """
+    result = []
+    for line in polygons:
+        class_id = int(line[0])
+        coords = line[1:]
+        try:
+            points = [(float(coords[i]), float(coords[i+1]))
+                      for i in range(0, len(coords), 2)]
+            if points[0] != points[-1]:
+                points.append(points[0])
+            poly = Polygon(points)
+            result.append((poly, class_id, poly.area))
+        except (ValueError, shapely.errors.TopologicalError):
+            continue
+    return result
+
+def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class, outer_contour, skin_width):
     """
             Determines the most appropriate class for a triangle based on maximum area of intersection with given contours.
 
@@ -89,9 +130,15 @@ def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class):
             nodes (List[int]): Flat list of node indices, with 3 indices per triangle.
             node_dict (Dict[int, Tuple[float, float]]): Mapping from node index to (x, y) coordinate.
             tags (List[int]): List of triangle identifiers (e.g., element tags) indexed by triangle.
-            contours (List[List[float]]): List of contours, where each contour starts with a class label
+            contours (List(Polygon in Shapely, class_number, area of contour)): List of contours
             followed by flat (x1, y1, x2, y2, ...) coordinates.
             outer_contour_class (Any): Default class to assign if no intersection is found.
+            outer_contour: list
+            Contains the data of outer contour in the same format as contours parameter
+            skin_width: float, optional (default=7)
+            Width of skin to be added. If value is 0, no skin will be added
+            If value is -1, innermost finite elements will be considered as skin
+            Otherwise outer contour with specified width will be added
 
             Returns:
             --------
@@ -102,24 +149,41 @@ def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class):
     # Get triangle vertex coordinates
     n1, n2, n3 = nodes[i * 3: (i + 1) * 3]
     triangle = [node_dict[n1], node_dict[n2], node_dict[n3]]
+    if skin_width==-1:
+        tri_poly = Polygon(triangle)
+        outer_contour_points = [(outer_contour[k], outer_contour[k + 1]) for k in range(1, len(outer_contour), 2)]
+        outer_poly=Polygon(outer_contour_points)
+        eps = 1e-9
+        for x, y in triangle:
+            if outer_poly.boundary.distance(Point(x, y)) < eps:
+                return 4, tags[i]
     max_intersection = 0
     best_class = outer_contour_class
+    triangle_poly = Polygon(triangle)
+    triangle_area = triangle_poly.area
+    centroid = triangle_poly.centroid
     # Compare triangle with all contours
     for j in range(len(contours)):
-        contour_class = contours[j][0]
-        contour_points = [(contours[j][k], contours[j][k + 1]) for k in range(1, len(contours[j]), 2)]
-        contour_poly = Polygon(contour_points)
-        try:
-            intersection = Polygon(triangle).intersection(contour_poly).area
-            if intersection > max_intersection:
-                max_intersection = intersection
-                best_class = contour_class
-        except:
-            pass
+        contour_class = contours[j][1]
+        if int(contour_class)!=outer_contour_class:
+            contour_poly = contours[j][0]
+            try:
+                if contour_poly.contains(centroid):
+                    best_class = contour_class
+                    break
+                inter = triangle_poly.intersection(contour_poly).area
+                if inter / triangle_area > 0.5:
+                    best_class = contour_class
+                    break
+                if inter>max_intersection:
+                    max_intersection = inter
+                    best_class = contour_class
+            except:
+                pass
     return best_class, tags[i]
 
 
-def export_mesh_for_femm(filename, class_groups):
+def export_mesh_for_femm(filename, class_groups, isSaveToFile = False):
     """
     Export a 2D triangular mesh from Gmsh to a simple text-based format suitable for use in FEMM or other tools.
 
@@ -131,6 +195,13 @@ def export_mesh_for_femm(filename, class_groups):
     class_groups : dict
         Dictionary mapping class IDs to lists of triangle element tags.
         Example: {0: [1, 2, 3], 1: [4, 5, 6]}
+
+    isSaveToFile: bool
+        Is result need saving to file
+
+    Returns:
+    --------
+    Dictionary['NODES, TRIANGLES, CLASSES']: A dictionary containing information for femm
 
     Notes:
     ------
@@ -146,40 +217,51 @@ def export_mesh_for_femm(filename, class_groups):
         tag: (node_coords[i * 3], node_coords[i * 3 + 1])
         for i, tag in enumerate(node_tags)
     }
-    # Map: node tag → local index
-    tag_to_index = {tag: i + 1 for i, tag in enumerate(sorted(node_tags))}
 
     # Elements
     elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(2)
 
     # Combining triangles list with their classes
     triangle_data = []
+    dictionary_for_femm={'NODES' : [], 'TRIANGLES': [], 'CLASS': []}
+    used_nodes = set()
     for elem_type, tags, nodes in zip(elem_types, elem_tags, elem_node_tags):
-        if elem_type == 2:  # Треугольники
+        if elem_type == 2:  # Triangles
             for i in range(len(tags)):
                 elem_tag = tags[i]
                 n1, n2, n3 = nodes[i * 3:(i + 1) * 3]
+                used_nodes.update([n1, n2, n3])  # adding nodes to set
                 class_id = None
                 for cid, tag_list in class_groups.items():
                     if elem_tag in tag_list:
                         class_id = cid
                         break
-                triangle_data.append((tag_to_index[n1], tag_to_index[n2], tag_to_index[n3], class_id))
+                triangle_data.append((n1, n2, n3, class_id))
 
-    # Saving into file
-    with open(filename, 'w') as f:
-        f.write("# NODES\n")
-        for tag in sorted(node_tags):
-            x, y = node_dict[tag]
-            idx = tag_to_index[tag]
-            f.write(f"{idx} {x:.12f} {y:.12f}\n")
+    # Map: node tag → local index
+    # Must save only used nodes
+    tag_to_index = {tag: i+1 for i, tag in enumerate(sorted(used_nodes))}
 
-        f.write("\n# TRIANGLES\n")
-        for n1, n2, n3, class_id in triangle_data:
-            f.write(f"{n1} {n2} {n3} {class_id}\n")
+    for tag in sorted(used_nodes):
+        x, y = node_dict[tag]
+        dictionary_for_femm['NODES'].append([float(x), float(y)])
+    for n1, n2, n3, class_id in triangle_data:
+        dictionary_for_femm['TRIANGLES'].append([int(tag_to_index[n1])-1, int(tag_to_index[n2])-1, int(tag_to_index[n3])-1])
+        dictionary_for_femm['CLASS'].append(int(float(class_id)))
 
-    print(f"Mesh exported to: {filename}, finite elements count - {len(triangle_data)}")
-
+    if isSaveToFile is True:
+        # Saving into file
+        with open(filename, 'w') as f:
+            f.write("# NODES\n")
+            for tag in sorted(used_nodes):
+                x, y = node_dict[tag]
+                idx = tag_to_index[tag]
+                f.write(f"{idx} {x:.12f} {y:.12f}\n")
+            f.write("\n# TRIANGLES\n")
+            for n1, n2, n3, class_id in triangle_data:
+                f.write(f"{tag_to_index[n1]} {tag_to_index[n2]} {tag_to_index[n3]} {class_id}\n")
+        print(f"Mesh exported to: {filename}, finite elements count - {len(triangle_data)}")
+    return dictionary_for_femm
 
 def show_class(class_groups, class_for_showing=-1):
     """
@@ -282,9 +364,9 @@ def get_image(class_groups, image_size=(1000, 1000), margin=10):
     return img
 
 
-def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_inner_contours=False,
+def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_width = 1, is_show_inner_contours=False,
                 show_meshing_result_method="opencv",
-                number_of_showed_class=-1, is_exporting_to_femm=True, export_filename=None):
+                number_of_showed_class=-1, is_saving_to_file=False, export_filename=None):
     """
     Creates a 2D triangular mesh from contour data and optionally exports or visualizes it.
 
@@ -303,6 +385,11 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
     distance_threshold : float, optional (default=1.3)
         Distance threshold used when merging collinear segments in the contour.
 
+    skin_width: float, optional (default=1)
+        Width of skin to be added. If value is 0, no skin will be added
+        If value is -1, innermost finite elements will be considered as skin
+        Otherwise outer contour with specified width will be added
+
     is_show_inner_contours : bool, optional (default=False)
         If True, all inner contours (not just the outer boundary) will be shown and meshed.
         If False, only the outermost contour is used for geometry creation.
@@ -316,7 +403,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
         Specifies which class to display in the Gmsh GUI when `iShowMeshingResult` is True.
         If set to -1, no class is explicitly hidden.
 
-    isExportingToFemm : bool, optional (default=False)
+    is_saving_to_file : bool, optional (default=False)
         If True, exports the mesh with class information to a format compatible with FEMM.
 
     export_filename : str or None, optional (default=None)
@@ -328,7 +415,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
     mesh_image: numpy.array
     A NumPy array representing the RGB image (dtype=np.uint8) with elements
         filled in class-specific colors and outlined in black
-    mesh_data: data for femm generation of synthetic datasets. Currently, data exports in file, this parameter returns empty line
+    mesh_data: data for femm generation of synthetic datasets
 
     Side Effects:
     -------------
@@ -351,13 +438,15 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
     - Uses the `gmsh` Python API.
     """
     mesh_image = np.array([512, 512, 3])
-    mesh_data = ''
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     contours = []
     outer_contour = None
     outer_contour_class = None
-    outer_segment = largest_segment_area_index(polygons)
+    outer_segment_area = None
+    outer_segment = find_outer_contour(polygons)
+    if skin_width>0:
+        outer_segment, polygons = add_skin(outer_segment, polygons, skin_width)
     for k in range(len(polygons)):
         geometry_points = []
         geometry_lines = []
@@ -374,6 +463,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
                     geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i + 1]))
             if k == outer_segment:
                 outer_contour_class = int(area[0])
+                outer_segment_area = area
                 outer_contour = gmsh.model.geo.add_curve_loop(geometry_lines)
 
     gmsh.model.geo.add_plane_surface([outer_contour])
@@ -383,17 +473,16 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, is_show_i
     # Generate mesh:
     gmsh.model.mesh.generate(2)
 
-    class_groups = divide_triangles_into_groups(contours, outer_contour_class)
+    class_groups = divide_triangles_into_groups(contours, outer_contour_class, outer_segment_area, skin_width)
     img = None
     if show_meshing_result_method == "gmsh":
         show_class(class_groups, number_of_showed_class)
     elif show_meshing_result_method == "opencv":
         img = get_image(class_groups)
-    if is_exporting_to_femm and export_filename is not None:
-        export_mesh_for_femm(export_filename, class_groups)
+    mesh_data = export_mesh_for_femm(export_filename, class_groups, is_saving_to_file)
     # It finalizes the Gmsh API
     gmsh.finalize()
-    return img
+    return img, mesh_data
 
 
 def largest_segment_area_index(polygons):
@@ -454,6 +543,76 @@ def largest_segment_area_index(polygons):
 
     return max_index
 
+
+def find_outer_contour(polygons):
+    """
+        Determines the index (line number) of the contour with the largest area in the input file.
+
+        Parameters:
+        -----------
+        polygons: List containing contour data.
+            Each line should represent a contour in the format:
+            <class_id> x1 y1 x2 y2 ... xn yn. Example:
+            ['3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390',
+               '3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390', ...]
+
+        Returns:
+        --------
+        int
+            The index (starting from 0) of the line representing the largest area polygon.
+            Returns -1 if no valid polygons are found.
+
+        Notes:
+        ------
+        - The function ignores lines with an odd number of coordinates (invalid pairs).
+        - Polygons are closed automatically if the first and last points do not match.
+        - Lines that cause parsing errors or contain invalid geometries are skipped.
+        - Uses Shapely to calculate polygon areas.
+
+        Exceptions:
+        -----------
+        - Lines that fail due to incorrect float conversion or topological issues in Shapely
+          are safely skipped.
+        """
+    #If we have class 4 in segmentation results than this is outer contour
+    for idx, line in enumerate(polygons, start=0):
+        if line[0]=='4':
+            return idx
+
+    shapes = []
+    for line in polygons:
+        parts = line.strip().split()
+        coords = parts[1:]
+        if len(coords) < 6 or len(coords) % 2 != 0:
+            continue
+        try:
+            points = [(float(coords[i]), float(coords[i + 1]))
+                      for i in range(0, len(coords), 2)]
+            if points[0] != points[-1]:
+                points.append(points[0])
+            poly = Polygon(points)
+            if poly.is_valid and poly.area > 0:
+                shapes.append(poly)
+        except (ValueError, shapely.errors.TopologicalError):
+            continue
+    if not shapes:
+        return None
+    merged = unary_union(shapes)
+
+    # If result is MultiPolygon, we take outer contour from each
+    if isinstance(merged, MultiPolygon):
+        main_poly = max(merged.geoms, key=lambda p: p.area)
+    else:
+        main_poly = merged
+    outer_boundary = main_poly.exterior
+    coords = list(outer_boundary.coords)
+    parts = ['4']
+    for x, y in coords:
+        parts.append(str(x))
+        parts.append(str(y))
+    new_line = " ".join(parts)
+    polygons.append(new_line)
+    return len(polygons) - 1
 
 def merge_collinear_segments(contour, distance_threshold=1.3):
     """
@@ -541,6 +700,39 @@ def point_line_distance(px, py, x1, y1, x2, y2):
     return abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1) / np.linalg.norm([x2 - x1, y2 - y1])
 
 
+def add_skin(outer_segment, polygons, skin_width):
+    """
+    Create an additional contour around the outer contour (offset by skin_width).
+
+    :param outer_segment: int, index of the outer contour in polygons
+    :param polygons: list[str], format "<class_id> x1 y1 x2 y2 ... xn yn"
+    :param skin_width: float, offset distance
+    :return: new_outer_segment, polygons
+    """
+    # Parse the outer contour
+    parts = polygons[outer_segment].split()
+    class_id = 4 #skin
+    coords = list(map(float, parts[1:]))
+    points = [(coords[i], coords[i + 1]) for i in range(0, len(coords), 2)]
+
+    # Create a shapely polygon
+    poly = Polygon(points)
+
+    # Offset outward (buffer)
+    outer_poly = poly.buffer(skin_width)
+
+    # Extract exterior coordinates of the new polygon
+    new_points = list(outer_poly.exterior.coords)
+
+    # Convert back to the polygons format
+    new_line = str(class_id) + " " + " ".join(f"{x:.6f} {y:.6f}" for x, y in new_points)
+
+    # Append the new contour
+    polygons.append(new_line)
+
+    # Return the index of the new contour
+    return len(polygons) - 1, polygons
+
 def test_module():
     test_list = [
         '3 33 124 0 202 0 299 28 378 74 438 154 463 261 452 381 459 441 434 482 378 511 301 511 212 486 140 452 105 332 58 176 58 33 124',
@@ -611,11 +803,13 @@ def test_module():
         '1 135 107 141 102 159 95 191 96 209 102 228 123 233 125 233 130 233 117 254 108 259 102 259 92 249 81 235 77 225 80 215 76 184 76 148 85 161 89 154 96 141 99 135 107',
         '2 380 114 336 114 314 124 297 141 280 185 245 214 246 231 292 241 308 255 312 230 326 228 340 210 328 258 346 274 325 268 318 283 308 282 304 346 264 386 265 396 351 405 398 383 428 339 442 300 447 238 437 224 430 171 380 114',
         '2 142 110 100 150 82 183 82 202 62 256 67 325 82 342 92 374 133 410 165 416 215 403 257 404 242 385 194 363 176 334 188 272 212 246 205 230 219 222 199 203 197 190 227 161 223 137 194 112 142 110']
-    create_mesh(['0.682', '0.682'], test_list,
+
+    create_mesh(['1', '1'], test_list,
                 7,
-                1.3, True,
-                show_meshing_result_method="opencv",
-                is_exporting_to_femm=True,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
                 export_filename="tmp.txt")
 
 

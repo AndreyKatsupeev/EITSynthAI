@@ -117,6 +117,36 @@ def prepare_mesh(fpath:str, classes_list:dict)->dict:
     mesh = check_mesh_nodes(badmesh)
     return mesh
 
+def prepare_mesh_from_femm_generator(mesh_data:dict, classes_list:dict = classes_list)->dict:
+    """
+        Convert FEMM mesh data into a format suitable for PyEIT computations.
+
+        This function groups mesh elements by material/class, converts node and
+        element arrays to NumPy format, and prepares auxiliary structures required
+        for conductivity assignment.
+
+        :param mesh_data: dict, raw mesh data from FEMM generator. Expected keys:
+            - 'TRIANGLES': element connectivity
+            - 'NODES': node coordinates
+            - 'CLASS': class/material id per element
+        :param classes_list: dict, mapping from class id (as string) to class name
+        :return: dict with keys:
+            - 'element': np.ndarray, element connectivity
+            - 'node': np.ndarray, node coordinates
+            - 'cond': np.ndarray, class ids per element
+            - 'classes_gr': dict[str, list[int]], element indices grouped by class
+        """
+    classes_elems_idxs = {}
+    for _, class_name in classes_list.items():
+        classes_elems_idxs[class_name] = []
+    for i, class_id in enumerate(mesh_data['CLASS']):
+        class_name = classes_list[str(class_id)]
+        classes_elems_idxs[class_name].append(i)
+    return {'element' : np.array(mesh_data['TRIANGLES']),
+            'node' : np.array(mesh_data['NODES']),
+            'cond' : np.array(mesh_data['CLASS']),
+            'classes_gr':classes_elems_idxs}
+
 def create_pyeit_model(meshinfo:dict, Nelec:int)->PyEITMesh:
     '''
     create mesh object for pyeit from loaded meshinfo with equal spaced
