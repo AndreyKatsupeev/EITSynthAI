@@ -26,6 +26,10 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 
 # Инструкция по запуску проекта
 
+## Под системой Windows
+
+На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/windows)
+
 1. **Скопировать проект**  
    Выполните команду:  
    ```bash
@@ -37,9 +41,28 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 5. **Из корня проекта запустить команду**
    ```bash
    wsl --update
-6. **Из корня проекта запустить команду**
+6. **Запустить Docker на ПК**
+7. **Из корня проекта запустить команду**
    ```bash
    docker compose up --build -d
-7. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/)**
+8. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
 
-8. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+9. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
+
+
+## Под системой Linux
+
+На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/linux)
+
+1. **Скопировать проект**  
+   Выполните команду:  
+   ```bash
+   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git
+   
+2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
+3. **Поместить веса в директорию weights/**
+4. **Из корня проекта запустить команду**
+   ```bash
+   docker compose up --build -d
+5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
+6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/umV5bwXXuZrciw)**
