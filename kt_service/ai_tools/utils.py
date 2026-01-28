@@ -233,6 +233,7 @@ def search_number_axial_slice(detections, custom_number_slise=0, image_width=512
     number_axial_slice_list = []
     # Получаем абсолютные координаты среза
     coordinates = detections.xyxy
+
     # Находим середину изображения
     midpoint = image_width / 2
     # Фильтрация координат, оставляем только те, что правее середины
@@ -1063,7 +1064,48 @@ def get_pixel_spacing(dicom_data):
     return pixel_spacing
 
 
-def create_list_crd_from_color_output(color_output, pixel_spacing):
+def ensure_closed_contour(coords):
+    """Гарантирует, что контур замкнут: первая и последняя точки совпадают."""
+    if len(coords) == 0:
+        return coords
+    first = coords[0]
+    last = coords[-1]
+    if not numpy.array_equal(first, last):
+        coords = numpy.vstack([coords, first])
+    return coords
+
+
+def get_only_body_mask_contours(only_body_mask):
+    """
+    Функция для получения координато контура тела
+
+    :param only_body_mask: opencv image
+    """
+    body_binary = []
+    if only_body_mask is not None and only_body_mask.any():
+        if only_body_mask.dtype != numpy.uint8:
+            body_binary = (only_body_mask > 0).astype(numpy.uint8) * 255
+        else:
+            body_binary = only_body_mask
+
+
+    body_contours, _ = cv2.findContours(body_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+
+    for cnt in body_contours:
+        if len(cnt) < 5:
+            continue
+        # Преобразуем контур в массив координат (N, 2)
+        coords = cnt.reshape(-1, 2).astype(numpy.float64)
+        # Гарантируем замкнутость
+        coords = ensure_closed_contour(coords)
+        closed_cnt = coords[:-1].reshape(-1, 1, 2)
+        points_str = " ".join([f"{int(p[0][0])} {int(p[0][1])}" for p in closed_cnt])
+        polygon_str = f"{'4'} {points_str}"
+    return polygon_str
+
+
+def create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask=None):
     """
     Преобразует цветную маску сегментации в список координат полигонов для каждого класса.
 
@@ -1105,6 +1147,8 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
 
     # Конвертируем изображение в BGR (для корректной работы cv2.inRange)
     img = cv2.cvtColor(color_output, cv2.COLOR_RGB2BGR)
+    if only_body_mask is not None:
+        only_body_mask_contours = get_only_body_mask_contours(only_body_mask)
 
     # Обрабатываем каждый цвет/класс
     for color, class_name in color_class_map.items():
@@ -1141,10 +1185,12 @@ def create_list_crd_from_color_output(color_output, pixel_spacing):
             points_str = " ".join([f"{p[0][0]} {p[0][1]}" for p in approx])
             polygon_str = f"{class_name} {points_str}"
             result.append(polygon_str)
-
+    if only_body_mask is not None:
+        result.append(only_body_mask_contours)
     # Добавляем значения pixel_spacing в начало списка
     result.insert(0, str(pixel_spacing[1]))  # spacing_y
     result.insert(0, str(pixel_spacing[0]))  # spacing_x
+    logger.info(f"result {result}")
 
     return result
 

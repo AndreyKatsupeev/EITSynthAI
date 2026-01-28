@@ -215,7 +215,8 @@ class DICOMSequencesToMask(DICOMabc):
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
-        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
+
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
         img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
@@ -283,7 +284,7 @@ class DICOMSequencesToMaskCustom(DICOMSequencesToMask):
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
-        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
         img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
@@ -331,7 +332,7 @@ class DICOMToMask(DICOMSequencesToMask):
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
-        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
         img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
@@ -369,7 +370,7 @@ class ImageToMask(DICOMSequencesToMask):
         """
         only_body_mask = None
         ribs_annotated_image = None
-        pixel_spacing = [1, 1]
+        pixel_spacing = [0.753906, 0.753906]
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
@@ -419,7 +420,7 @@ class NIIToMask(DICOMSequencesToMask):
             axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
             segmentation_masks_image = create_segmentations_masks(axial_segmentations)
             color_output = create_color_output(segmentation_masks_image, only_body_mask)
-            list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+            list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
             img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
