@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from EITSynthAI.models.model_generator import (
+from EITSynthAI.kt_service.ai_tools.femm_tools.model_generator import (
     load_yolo,
     load_mesh,
     check_mesh_nodes,
@@ -16,8 +16,8 @@ from EITSynthAI.models.model_generator import (
 class TestModelGenerator(unittest.TestCase):
 
     def setUp(self):
-        self.sample_yolo_path = '/Users/southrussian/PycharmProjects/EITSynthAI/EITSynthAI/models/data/test_data.txt'
-        self.sample_mesh_path = '/Users/southrussian/PycharmProjects/EITSynthAI/EITSynthAI/models/data/tmp.txt'
+        self.sample_yolo_path = '/EITSynthAI/kt_service/ai_tools/femm_tools/data/test_data.txt'
+        self.sample_mesh_path = '/EITSynthAI/kt_service/ai_tools/femm_tools/data/tmp.txt'
         self.settings = Settings(Nelec=16, Relec=10, accuracy=0.5,
                                  min_area=100, polydeg=5, skinthick=1,
                                  I=0.005, Freq=50000, thin_coeff=5)

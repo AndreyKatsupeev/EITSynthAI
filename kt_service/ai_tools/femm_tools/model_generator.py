@@ -1,4 +1,4 @@
-#generation model in FEMM by coords
+# generation model in FEMM by coords
 from .filters import *
 from .femm_api import *
 import os
@@ -8,11 +8,12 @@ from pyeit.mesh.external import place_electrodes_equal_spacing
 import numpy.typing as npt
 
 Settings = collections.namedtuple('Settings',
-    ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
-    'skinthick', 'I', 'Freq', 'thin_coeff'])
-classes_list = {'0': 'bone', '1':'muscles', '2':'fat', '3':'lung', '4':'skin'}
+                                  ['Nelec', 'Relec', 'accuracy', 'min_area', 'polydeg',
+                                   'skinthick', 'I', 'Freq', 'thin_coeff'])
+classes_list = {'0': 'bone', '1': 'muscles', '2': 'fat', '3': 'lung', '4': 'skin'}
 
-def load_yolo(filepath:str, classes_list:dict)->dict:
+
+def load_yolo(filepath: str, classes_list: dict) -> dict:
     """
     load tissues borders from yolo dataset into dict, where 
         keys - tissues classes,
@@ -36,8 +37,8 @@ def load_yolo(filepath:str, classes_list:dict)->dict:
                         y.append(float(val))
                         try:
                             if (x[-2], y[-2]) == (x[-1], y[-1]):
-                                del(x[-1])
-                                del(y[-1])
+                                del (x[-1])
+                                del (y[-1])
                         except:
                             pass
                 else:
@@ -47,13 +48,14 @@ def load_yolo(filepath:str, classes_list:dict)->dict:
                         raise ValueError(f'Unknown tissue type {val}')
             if len(x) != len(y):
                 raise ValueError(f'len(x) != len(y): {len(x)} != {len(y)}')
-            if len(x)>=3:
+            if len(x) >= 3:
                 if not tissue_type in borders:
                     borders[tissue_type] = []
                 borders[tissue_type].append(np.transpose(np.array([x, y])))
     return borders
 
-def load_mesh(fpath:str, classes_list:dict)->dict:
+
+def load_mesh(fpath: str, classes_list: dict) -> dict:
     '''
     load mesh from mesh service, saved in txt
     Args:
@@ -64,10 +66,10 @@ def load_mesh(fpath:str, classes_list:dict)->dict:
     classes_elems_idxs = {}
     for _, class_name in classes_list.items():
         classes_elems_idxs[class_name] = []
-    dic = {'NODES' : [], 'TRIANGLES': [], 'CLASS': []}
+    dic = {'NODES': [], 'TRIANGLES': [], 'CLASS': []}
     key = ''
     i = 0
-    with open(fpath,'r') as file:
+    with open(fpath, 'r') as file:
         for line in file:
             if line.strip():
                 s = line.strip().split(' ')
@@ -82,12 +84,13 @@ def load_mesh(fpath:str, classes_list:dict)->dict:
                     class_name = classes_list[str(clasidx)]
                     classes_elems_idxs[class_name].append(i)
                     i += 1
-    return {'element' : np.array(dic['TRIANGLES']),
-            'node' : np.array(dic['NODES']),
-            'cond' : np.array(dic['CLASS']),
-            'classes_gr':classes_elems_idxs}
+    return {'element': np.array(dic['TRIANGLES']),
+            'node': np.array(dic['NODES']),
+            'cond': np.array(dic['CLASS']),
+            'classes_gr': classes_elems_idxs}
 
-def check_mesh_nodes(meshinfo:dict)->dict:
+
+def check_mesh_nodes(meshinfo: dict) -> dict:
     '''
     check that all nodes used by elements, if not - delete unused nodes
     and change elements nodes indexes
@@ -96,11 +99,11 @@ def check_mesh_nodes(meshinfo:dict)->dict:
     '''
     all_used_nodes = list(set(meshinfo['element'].ravel()))
     newmeshinfo = dict(meshinfo)
-    if len(all_used_nodes) < meshinfo['node'].shape[0]:    
+    if len(all_used_nodes) < meshinfo['node'].shape[0]:
         not_used_nodes = [i for i in range(meshinfo['node'].shape[0]) if i not in all_used_nodes]
         newmeshinfo['node'] = np.delete(meshinfo['node'], not_used_nodes, axis=0)
         node_number_bias = [all_used_nodes[i] - i for i in range(len(all_used_nodes))]
-        newmeshinfo['element'] = np.empty([0,3], dtype='i')
+        newmeshinfo['element'] = np.empty([0, 3], dtype='i')
         for triangle in meshinfo['element']:
             tmp = []
             for node in triangle:
@@ -109,15 +112,48 @@ def check_mesh_nodes(meshinfo:dict)->dict:
                     tmp.append(node - node_number_bias[bias_idx])
             if len(tmp) != 3:
                 raise ValueError('triangle with unused noode impossible')
-            newmeshinfo['element'] = np.vstack((newmeshinfo['element'],np.array(tmp)))    
+            newmeshinfo['element'] = np.vstack((newmeshinfo['element'], np.array(tmp)))
     return newmeshinfo
 
-def prepare_mesh(fpath:str, classes_list:dict)->dict:
+
+def prepare_mesh(fpath: str, classes_list: dict) -> dict:
     badmesh = load_mesh(fpath, classes_list)
     mesh = check_mesh_nodes(badmesh)
     return mesh
 
-def create_pyeit_model(meshinfo:dict, Nelec:int)->PyEITMesh:
+
+def prepare_mesh_from_femm_generator(mesh_data: dict, classes_list: dict = classes_list) -> dict:
+    """
+        Convert FEMM mesh data into a format suitable for PyEIT computations.
+
+        This function groups mesh elements by material/class, converts node and
+        element arrays to NumPy format, and prepares auxiliary structures required
+        for conductivity assignment.
+
+        :param mesh_data: dict, raw mesh data from FEMM generator. Expected keys:
+            - 'TRIANGLES': element connectivity
+            - 'NODES': node coordinates
+            - 'CLASS': class/material id per element
+        :param classes_list: dict, mapping from class id (as string) to class name
+        :return: dict with keys:
+            - 'element': np.ndarray, element connectivity
+            - 'node': np.ndarray, node coordinates
+            - 'cond': np.ndarray, class ids per element
+            - 'classes_gr': dict[str, list[int]], element indices grouped by class
+        """
+    classes_elems_idxs = {}
+    for _, class_name in classes_list.items():
+        classes_elems_idxs[class_name] = []
+    for i, class_id in enumerate(mesh_data['CLASS']):
+        class_name = classes_list[str(class_id)]
+        classes_elems_idxs[class_name].append(i)
+    return {'element': np.array(mesh_data['TRIANGLES']),
+            'node': np.array(mesh_data['NODES']),
+            'cond': np.array(mesh_data['CLASS']),
+            'classes_gr': classes_elems_idxs}
+
+
+def create_pyeit_model(meshinfo: dict, Nelec: int) -> PyEITMesh:
     '''
     create mesh object for pyeit from loaded meshinfo with equal spaced
     elctrodes
@@ -128,21 +164,22 @@ def create_pyeit_model(meshinfo:dict, Nelec:int)->PyEITMesh:
         PyEITMesh object
     '''
     mesh_obj = PyEITMesh(element=meshinfo['element'], node=meshinfo['node'])
-    electrode_nodes = place_electrodes_equal_spacing(mesh_obj, 
+    electrode_nodes = place_electrodes_equal_spacing(mesh_obj,
                                                      n_electrodes=Nelec,
-                                                     starting_angle = math.radians(180),
-                                                     starting_offset = 0)
+                                                     starting_angle=math.radians(180),
+                                                     starting_offset=0)
     mesh_obj.el_pos = np.array(electrode_nodes)
     return mesh_obj
 
-def prepare_data(borders:dict, settings:Settings)->tuple[dict,npt.NDArray]:
+
+def prepare_data(borders: dict, settings: Settings) -> tuple[dict, npt.NDArray]:
     bordersf = {}
     maxArea = 0
     for tissue, elements in borders.items():
-        bordersf[tissue] = {'coords' : [], 'pos' : 'cutted'}
+        bordersf[tissue] = {'coords': [], 'pos': 'cutted'}
         idx = 0
         for data in elements:
-            dataf = filter_inline_points(data, accuracy = settings.accuracy)
+            dataf = filter_inline_points(data, accuracy=settings.accuracy)
             adataf = сut_min_area_close_points(dataf, settings.min_area, settings.accuracy)
             area = PolyArea(adataf[:, 0], adataf[:, 1])
             if adataf.shape[0] >= 3 and area >= settings.min_area:
@@ -152,41 +189,42 @@ def prepare_data(borders:dict, settings:Settings)->tuple[dict,npt.NDArray]:
                     maxAreaTissue = tissue
                     maxAreaIdx = idx
                 idx += 1
-    #move to center
-    bias = np.mean(bordersf[maxAreaTissue]['coords'][maxAreaIdx], axis = 0)
+    # move to center
+    bias = np.mean(bordersf[maxAreaTissue]['coords'][maxAreaIdx], axis=0)
     bordersf[maxAreaTissue]['pos'] = 'edge1'
     for tissue, tisinfo in bordersf.items():
         for i in range(len(tisinfo['coords'])):
             bordersf[tissue]['coords'][i] = bordersf[tissue]['coords'][i] - bias
             if not (tissue == maxAreaTissue and i == maxAreaIdx):
-                bordersf[tissue]['coords'][i]  = bordersf[tissue]['coords'][i][::settings.thin_coeff]
+                bordersf[tissue]['coords'][i] = bordersf[tissue]['coords'][i][::settings.thin_coeff]
     data = filter_degr_polyfit(bordersf[maxAreaTissue]['coords'][maxAreaIdx], 90, 3)
     data = interpolate_surface_step(data, settings.polydeg, 2, 0.9, 3)
     data = interpolate_big_vert_breaks_poly(data, 10, 5)
     bordersf[maxAreaTissue]['coords'][maxAreaIdx] = data
     skin = add_skin(data, settings.skinthick)
     elecs = get_electrodes_coords(skin, settings.Nelec, settings.Relec)
-    #move centers out of model center at distansce of elec radius
-    #for selection right segment in femm preprocessor
+    # move centers out of model center at distansce of elec radius
+    # for selection right segment in femm preprocessor
     elecs[:, 2, :] = add_skin(elecs[:, 2, :], settings.Relec)
-    bordersf['skin'] = {'coords' : [insert_electordes_to_polygone(skin, elecs)],
-                        'pos' : 'edge1'}
+    bordersf['skin'] = {'coords': [insert_electordes_to_polygone(skin, elecs)],
+                        'pos': 'edge1'}
     return (bordersf, elecs)
 
-def get_materials(path:str)->dict:
+
+def get_materials(path: str) -> dict:
     '''
     returns dictionary with tissues conductivity and permitivity within frequency
     '''
     materials = {}
     freq = [10, 1e2, 1e3, 1e4, 1e5, 1e6]
-    materials['lung'] = {'cond':{}, 'perm':[], 'infl':[]}
-    materials['lung']['infl'] = np.transpose(np.array([freq, [11111,0.0416,0.04335,0.0497,0.06424,0.0647]]))
-    materials['lung']['cond'] = np.transpose(np.array([freq, [11111,0.1387,0.1231,0.1422,0.1821,0.2017]]))
-    materials['lung']['perm'] = np.transpose(np.array([freq, [3.195e7,5.426e5,1.088e5,30606,11513,1567]]))
-    materials['skin'] = {'cond' : np.transpose(np.array([freq, [0.3347,0.365374,0.3817,0.43529,0.566,0.839]])),
-                         'perm' : np.transpose(np.array([freq, [1.116e5,55953.3,41437.3,28898.1,14925,2118.79]]))}
-    materials['bone'] = {'cond' : np.transpose(np.array([freq, [0.00585,0.00586,0.00587,0.00589,0.006,0.007]])),
-                         'perm' : np.transpose(np.array([freq, [40140,3824,892,303,103,30.4]]))}
+    materials['lung'] = {'cond': {}, 'perm': [], 'infl': []}
+    materials['lung']['infl'] = np.transpose(np.array([freq, [11111, 0.0416, 0.04335, 0.0497, 0.06424, 0.0647]]))
+    materials['lung']['cond'] = np.transpose(np.array([freq, [11111, 0.1387, 0.1231, 0.1422, 0.1821, 0.2017]]))
+    materials['lung']['perm'] = np.transpose(np.array([freq, [3.195e7, 5.426e5, 1.088e5, 30606, 11513, 1567]]))
+    materials['skin'] = {'cond': np.transpose(np.array([freq, [0.3347, 0.365374, 0.3817, 0.43529, 0.566, 0.839]])),
+                         'perm': np.transpose(np.array([freq, [1.116e5, 55953.3, 41437.3, 28898.1, 14925, 2118.79]]))}
+    materials['bone'] = {'cond': np.transpose(np.array([freq, [0.00585, 0.00586, 0.00587, 0.00589, 0.006, 0.007]])),
+                         'perm': np.transpose(np.array([freq, [40140, 3824, 892, 303, 103, 30.4]]))}
     for mat in ('muscles', 'fat'):
         materials[mat] = {}
         for param in ('cond', 'perm'):
@@ -199,22 +237,24 @@ def get_materials(path:str)->dict:
             materials[mat][param] = np.array(data)
     return materials
 
-def add_skin(data:npt.NDArray, width:float)->npt.NDArray:
+
+def add_skin(data: npt.NDArray, width: float) -> npt.NDArray:
     '''
     creates new polygone on distance 'width' from given
     https://math.stackexchange.com/questions/175896
     '''
-    cent = np.mean(data, axis = 0)
-    skin = np.empty([0,2])
+    cent = np.mean(data, axis=0)
+    skin = np.empty([0, 2])
     for point in data:
-        dist = calc_dist(cent, point, typ = 'dist')
-        t = - width/dist
-        xt = (1-t)*point[0] + t*cent[0]
-        yt = (1-t)*point[1] + t*cent[1]
+        dist = calc_dist(cent, point, typ='dist')
+        t = - width / dist
+        xt = (1 - t) * point[0] + t * cent[0]
+        yt = (1 - t) * point[1] + t * cent[1]
         skin = np.vstack([skin, [xt, yt]])
     return skin
 
-def get_electrodes_coords(data:npt.NDArray, Nelec:int, Relec:float)->npt.NDArray:
+
+def get_electrodes_coords(data: npt.NDArray, Nelec: int, Relec: float) -> npt.NDArray:
     '''
     find centeres and edges of flat electrodes
     Args:
@@ -222,38 +262,38 @@ def get_electrodes_coords(data:npt.NDArray, Nelec:int, Relec:float)->npt.NDArray
         Nelec - number of electrodes
         Relec - radius of electrodes
     Returns:
-        elecs - 3d np. array. first dimension - number of elctrodes, 
+        elecs - 3d np. array. first dimension - number of elctrodes,
                 second - rigth(0), left(1) and center(2) points, third - x and y
         cents - 2d array of centres coordinates
     '''
-    #array of distances from right point
+    # array of distances from right point
     ds = []
-    #find nearest to zero Ox 
-    #points clockwise
-    idx = np.where(np.logical_and(data[:,1] < 0, data[:,0] >= 0))[0][-1]
-    #calculate distance from first right pointto zero Ox
+    # find nearest to zero Ox
+    # points clockwise
+    idx = np.where(np.logical_and(data[:, 1] < 0, data[:, 0] >= 0))[0][-1]
+    # calculate distance from first right pointto zero Ox
     k, b = calc_lin_coef(data[idx], data[idx + 1])
     ds.append(calc_dist(data[idx], [0, b]))
-    #calculate perimeter
+    # calculate perimeter
     perim = calc_dist(data[0], data[-1])
     for i in range(data.shape[0] - 1):
         perim += calc_dist(data[i], data[i + 1])
-    #calculate distance between centres of elctrodes
+    # calculate distance between centres of elctrodes
     distbetwelec = perim / Nelec
-    #idx of points starting from zero and back
-    distidx = np.r_[idx:data.shape[0], 0 : idx ]
-    #add first value to array of nearest to center of electrode points
+    # idx of points starting from zero and back
+    distidx = np.r_[idx:data.shape[0], 0: idx]
+    # add first value to array of nearest to center of electrode points
     nearidx = [(idx, idx + 1)]
-    #current distance from center
+    # current distance from center
     s = - ds[0]
     for i in range(data.shape[0] - 1):
         s += calc_dist(data[distidx[i]], data[distidx[i + 1]])
-        #if new distance bigger than calculated
+        # if new distance bigger than calculated
         if s >= distbetwelec:
             s -= distbetwelec
             ds.append(s)
             nearidx.append((distidx[i], distidx[i + 1]))
-    #electrodes coordinates [right edge left edge center]
+    # electrodes coordinates [right edge left edge center]
     elecs = []
     for i in range(len(nearidx)):
         pr = data[nearidx[i][0]]
@@ -265,13 +305,14 @@ def get_electrodes_coords(data:npt.NDArray, Nelec:int, Relec:float)->npt.NDArray
         temp = np.empty([3, 2])
         for j in range(2):
             a = -1 if j else 1
-            temp[j] = np.array([x0 + a * dx, k * (x0 + a * dx) + b], ndmin = 2)
-        temp[2] = np.array([x0, k * x0 + b], ndmin = 2)#center
+            temp[j] = np.array([x0 + a * dx, k * (x0 + a * dx) + b], ndmin=2)
+        temp[2] = np.array([x0, k * x0 + b], ndmin=2)  # center
         elecs.append(temp)
     elecs = np.array(elecs)
     return elecs
 
-def insert_electordes_to_polygone(polygone:npt.NDArray, elecs:npt.NDArray)->npt.NDArray:
+
+def insert_electordes_to_polygone(polygone: npt.NDArray, elecs: npt.NDArray) -> npt.NDArray:
     '''
     insert electrodes to skin polygone
     '''
@@ -287,11 +328,11 @@ def insert_electordes_to_polygone(polygone:npt.NDArray, elecs:npt.NDArray)->npt.
         idx = np.where(np.logical_and(xand, yand))[0]
         if idx.size == 0:
             for j in range(out.shape[0] - 1):
-                polyr = max(out[j:j+2, 0])
-                polyl = min(out[j:j+2, 0])
-                polyu = max(out[j:j+2, 1])
-                polyd = min(out[j:j+2, 1])
-                #print(polyr, polyl, polyu, polyd)
+                polyr = max(out[j:j + 2, 0])
+                polyl = min(out[j:j + 2, 0])
+                polyu = max(out[j:j + 2, 1])
+                polyd = min(out[j:j + 2, 1])
+                # print(polyr, polyl, polyu, polyd)
                 if polyl <= elecs[i, 0, 0] <= polyr and polyd <= elecs[i, 0, 1] <= polyu:
                     insidx = j + 1
                     break
@@ -299,12 +340,13 @@ def insert_electordes_to_polygone(polygone:npt.NDArray, elecs:npt.NDArray)->npt.
                 print(i)
                 raise ValueError('electrode not found in polygone')
         else:
-            out = np.delete(out, idx, axis = 0)
+            out = np.delete(out, idx, axis=0)
             insidx = idx[0]
-        out = np.insert(out, insidx, elecs[i, 0:2, :], axis = 0)
+        out = np.insert(out, insidx, elecs[i, 0:2, :], axis=0)
     return out
 
-def save_model(fname:str, Nprojections = 0, dirpath = '')->list[str]:
+
+def save_model(fname: str, Nprojections=0, dirpath='') -> list[str]:
     """
     if Nprojections != 0 - save currnet opened problem Nprojections times
     with unique names (projection number in name)
@@ -328,9 +370,10 @@ def save_model(fname:str, Nprojections = 0, dirpath = '')->list[str]:
         femm.ci_saveas(fpaths[-1])
     return fpaths
 
-def create_femm_model(borders:dict, settings:Settings, materials:dict)->npt.NDArray:
+
+def create_femm_model(borders: dict, settings: Settings, materials: dict) -> npt.NDArray:
     '''
-    Open FEMM and create new current flow FEMM problem, add countours, 
+    Open FEMM and create new current flow FEMM problem, add countours,
     add conductors and materials
     Args:
         borders - dict with raw borders
@@ -347,31 +390,33 @@ def create_femm_model(borders:dict, settings:Settings, materials:dict)->npt.NDAr
             femm_add_label(data, tissue, tisinfo['pos'])
     return elecs
 
+
 def test_module():
     """
     :return:
     """
     import matplotlib.pyplot as plt
     from pyeit.visual.plot import create_mesh_plot
-    
+
     borders = load_yolo(r'./models/data/test_data.txt', classes_list)
     materials = get_materials('./models')
     testborders = {'muscles': [borders['fat'][2]],
-                   'lung':borders['lung'],
-                   'bone':borders['bone']}
-    settings = Settings(Nelec = 16, Relec = 10, accuracy = 0.5,
-                        min_area = 100, polydeg = 5, skinthick = 1,
-                        I = 0.005, Freq = 50000, thin_coeff = 5)
+                   'lung': borders['lung'],
+                   'bone': borders['bone']}
+    settings = Settings(Nelec=16, Relec=10, accuracy=0.5,
+                        min_area=100, polydeg=5, skinthick=1,
+                        I=0.005, Freq=50000, thin_coeff=5)
     elecs = create_femm_model(testborders, settings, materials)
-    save_model('test', Nprojections = settings.Nelec)
+    save_model('test', Nprojections=settings.Nelec)
     meshinfo = prepare_mesh('./models/data/tmp.txt', classes_list)
     mesh_obj = create_pyeit_model(meshinfo, settings.Nelec)
     mesh_obj.perm = meshinfo['cond']
     fig, ax = plt.subplots()
-    create_mesh_plot(ax, mesh_obj, electrodes = mesh_obj.el_pos,coordinate_labels="radiological")
+    create_mesh_plot(ax, mesh_obj, electrodes=mesh_obj.el_pos, coordinate_labels="radiological")
     plt.savefig('./models/temp/img.png')
 
 
 if __name__ == "__main__":
     import timeit
-    print(timeit.timeit('test_module()', globals=globals(), number = 1))
+
+    print(timeit.timeit('test_module()', globals=globals(), number=1))
