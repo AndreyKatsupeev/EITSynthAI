@@ -18,7 +18,7 @@ from pyeit.eit.fem import EITForward
 def get_spirometry_ref(fname:str)->npt.NDArray:
     '''
     load ventilation reference from file
-    Data recorded by custom EIT device at 
+    Data recorded by custom EIT device at
     Platov South-Russian Polytechnical University (Novocherkassk)
     Args:
         fname:str - path to file
@@ -49,7 +49,7 @@ def make_spirometry(N_resp:float, N_points:int)->npt.NDArray:
 
 def filt_FFT(typ:str, FPS:float, FC, data:npt.NDArray)->npt.NDArray:
     '''
-    make spectrum, zero some frequencys ampliude, rebuild signal from 
+    make spectrum, zero some frequencys ampliude, rebuild signal from
     spectrum
     Args:
         typ - type of filer (highpass, lowpass, bypass, rejecting)
@@ -165,7 +165,7 @@ def calculate_EIT_projection_femm(idx:int, elecs:npt.NDArray)->npt.NDArray:
     '''
     simulate EIT current injection and measurment
     in early opened FEMM problem - seletcs 2 neighbour
-    injection electrodes and measures all 
+    injection electrodes and measures all
     electrodes voltages (Sheffield protocol)
     Args:
         idx - index of projection
@@ -185,10 +185,10 @@ def calculate_EIT_projection_femm(idx:int, elecs:npt.NDArray)->npt.NDArray:
 
 def calculate_EIT_slice_femm_fast(fullfpath:str, elecs:npt.NDArray, tissue_props:dict, V:npt.NDArray):
     '''
-    open FEMM problem and 
+    open FEMM problem and
     simulate EIT current injection and measurment
     - seletcs all neighbour electrodes
-    as current injection and zero voltage and meas all 
+    as current injection and zero voltage and meas all
     electrodes voltages
     '''
     pythoncom.CoInitialize()
