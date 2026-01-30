@@ -1,8 +1,8 @@
 # Modeling for generating synthetic datasets with FEMM
 import femm
 import time
-from .model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list, prepare_mesh_from_femm_generator
-from .femm_api import *
+from kt_service.ai_tools.femm_tools.model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list, prepare_mesh_from_femm_generator
+from kt_service.ai_tools.femm_tools.femm_api import *
 import numpy as np
 import numpy.typing as npt
 import os
@@ -333,7 +333,7 @@ def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, 
         v = pool.starmap(process_EIT_projection, task_args)
     if isSaveToFile is True and filename is not None:
         with open(filename, "w") as f:
-            for i in range(N_points*N_minutes):
+            for i in range(N_spir*N_minutes):
                 for arr in v:
                     arr = np.asarray(arr).ravel()
                     np.savetxt(f, arr[None, :])

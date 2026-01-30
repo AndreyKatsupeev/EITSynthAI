@@ -1,7 +1,7 @@
 import sys, os, time
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
-import femm_generator
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 
 def get_test_data():
     test_list1 = [
@@ -321,7 +321,7 @@ def test_mesh_generation():
     for i, data in enumerate(get_test_data(), start=1):
         for lc in [8,10,12,14]:
             start_time = time.time()
-            femm_generator.create_mesh(['0.682', '0.682'], data,
+            create_mesh(['0.682', '0.682'], data,
                 lc,
                 1.3, 0, True,
                 show_meshing_result_method="no",
