@@ -8,6 +8,6 @@ save_log_path = ['ai_logs']
 
 
 
-device = "cuda"
+device = ""
 weights_ribs = '/'
 weights_segmentation = '/'

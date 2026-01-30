@@ -1,5 +1,6 @@
 import abc
 import time
+from datetime import datetime
 import requests
 import cv2
 import logging
@@ -15,6 +16,8 @@ from .utils import axial_to_sagittal, convert_to_3d, create_dicom_dict, search_n
 
 from .mesh_tools.femm_generator import create_mesh
 
+from .femm_tools.synthetic_datasets_generator import simulate_EIT_monitoring_pyeit
+
 from pathlib import Path
 
 from skimage.exposure import equalize_adapthist
@@ -24,7 +27,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from .. import kt_service_config
 import zipfile
-
+import torch
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -106,7 +109,7 @@ class DICOMabc(abc.ABC):
 
         """
         front_slice = cv2.cvtColor(front_slice, cv2.COLOR_BGR2RGB)
-        results = self.ribs_model(front_slice, conf=0.3, verbose=False, device=0, show_conf=False,
+        results = self.ribs_model(front_slice, conf=0.3, verbose=False, show_conf=False,
                                   show_labels=False)
         detections = sv.Detections.from_ultralytics(results[0])
         return detections
@@ -123,14 +126,13 @@ class DICOMabc(abc.ABC):
         
         # Выбираем модель в зависимости от размера
         if axial_slice_size == 256:
+            logger.info(f"Выбрана модель на разрешение 256")
             model = self.axial_model_256
         else:
+            logger.info(f"Выбрана модель на разрешение 512")
             model = self.axial_model_512
         
         # Проверка доступности CUDA
-        import torch
-        logger.info(f"CUDA available: {torch.cuda.is_available()}")
-        logger.info(f"Current device: {torch.cuda.current_device()}")
         logger.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
         
         # Замер времени
@@ -142,16 +144,8 @@ class DICOMabc(abc.ABC):
                 axial_slice_rgb,
                 conf=0.3,
                 verbose=False,
-                device='cuda:0',  # Явно указываем устройство
                 imgsz=axial_slice_size
-            )[0]
-            
-            # Проверяем, где выполнялся inference
-            if hasattr(results, 'boxes') and results.boxes is not None:
-                logger.info(f"Prediction completed on GPU")
-            elif hasattr(results, 'speed'):
-                logger.info(f"Inference speed: {results.speed}")
-                
+            )[0]                
         except Exception as e:
             logger.error(f"GPU inference failed: {e}")
             # Fallback to CPU
@@ -160,13 +154,12 @@ class DICOMabc(abc.ABC):
                 axial_slice_rgb,
                 conf=0.3,
                 verbose=False,
-                device='cpu',
                 imgsz=axial_slice_size
             )[0]
             logger.info("CPU inference completed")
         
-        segmentation_time = time.time() - t1
-        logger.info(f"Segmentation time: {segmentation_time:.2f} seconds")
+        segmentation_time = round(time.time() - t1, 3)
+        logger.info(f"Время сегментации: {segmentation_time:.2f} seconds")
         
         return results, segmentation_time
 
@@ -211,7 +204,6 @@ class DICOMSequencesToMask(DICOMabc):
         """
         img_mesh = None
         front_slice, img_3d, i_slices, _ = self._search_front_slise(zip_buffer)
-
         ribs_detections = self._ribs_predict(front_slice)
         axial_slice, number_slice_eit_list = self._search_axial_slice(ribs_detections, i_slices)
         axial_slice_norm = classic_norm(axial_slice[-1].pixel_array)
@@ -223,16 +215,40 @@ class DICOMSequencesToMask(DICOMabc):
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
-        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
+
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(
             segmentation_masks_image, only_body_mask, ribs_annotated_image,
             axial_slice_norm_body, img_mesh
         )
-        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+        simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time)
         return answer
+
+    def get_synthetic_dataset(self, meshdata):
+        """
+            Генерирование синтетического набора данных ЭИТ для заданной сетки.
+
+            Функция запускает численное моделирование ЭИТ-мониторинга с изменяющейся
+            во времени проводимостью лёгких, сохраняет результаты в файл с именем,
+            содержащим текущее время (вплоть до секунд), и возвращает вычисленные данные.
+
+            :param meshdata: dict, данные сетки, полученные из FEMM-генератора
+            :return: tuple:
+                - simulation_results: list[np.ndarray], рассчитанные ЭИТ-векторы
+                - filename: str, путь к файлу с сохранёнными результатами
+                - simulation_time: float, время генерации датасета в секундах
+            """
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"/app/generation_results/results_{ts}.dat"
+        logger.info(f"Начало simulate_EIT_monitoring_pyeit")
+        simulation_results, simulation_time = simulate_EIT_monitoring_pyeit(meshdata, isSaveToFile=True, filename=filename, materials_location="/app/kt_service/ai_tools/femm_tools")
+        logger.info(f"Конец simulate_EIT_monitoring_pyeit")
+
+        return simulation_results, filename, simulation_time
 
 
 class DICOMSequencesToMaskCustom(DICOMSequencesToMask):
@@ -268,16 +284,17 @@ class DICOMSequencesToMaskCustom(DICOMSequencesToMask):
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
-        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(
             segmentation_masks_image, only_body_mask, ribs_annotated_image,
             axial_slice_norm_body, img_mesh
         )
 
-        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+        simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time)
 
         return answer
 
@@ -315,15 +332,16 @@ class DICOMToMask(DICOMSequencesToMask):
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
-        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+        list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(
             segmentation_masks_image, only_body_mask, ribs_annotated_image,
             axial_slice_norm_body, img_mesh
         )
-        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+        simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time)
         return answer
 
 
@@ -352,19 +370,20 @@ class ImageToMask(DICOMSequencesToMask):
         """
         only_body_mask = None
         ribs_annotated_image = None
-        pixel_spacing = [1, 1]
+        pixel_spacing = [0.753906, 0.753906]
         axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
         segmentation_masks_image = create_segmentations_masks(axial_segmentations)
         color_output = create_color_output(segmentation_masks_image, only_body_mask)
         list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
         segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-        img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+        img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
         img_mesh = cv2.flip(img_mesh, 0)
         segmentation_masks_full_image = create_segmentation_masks_full_image(segmentation_masks_image, only_body_mask,
                                                                              ribs_annotated_image,
                                                                              axial_slice_norm_body, img_mesh
                                                                              )
-        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+        simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+        answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time)
         return answer
 
 
@@ -401,14 +420,15 @@ class NIIToMask(DICOMSequencesToMask):
             axial_segmentations, segmentation_time = self._axial_slice_predict(axial_slice_norm_body)
             segmentation_masks_image = create_segmentations_masks(axial_segmentations)
             color_output = create_color_output(segmentation_masks_image, only_body_mask)
-            list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing)
+            list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
 
-            img_mesh = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+            img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
             img_mesh = cv2.flip(img_mesh, 0)
             segmentation_masks_full_image = create_segmentation_masks_full_image(
                 segmentation_masks_image, only_body_mask, ribs_annotated_image,
                 axial_slice_norm_body, img_mesh)
-            answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time)
+            simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+            answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time)
 
             return answer
