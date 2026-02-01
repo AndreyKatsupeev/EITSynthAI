@@ -452,7 +452,8 @@ def create_segmentations_masks(axial_segmentations, img_size=512):
     # Получаем данные из результатов YOLO
     mask_coords_list = axial_segmentations.masks.data  # Тензоры с координатами масок
     class_ids = axial_segmentations.boxes.cls.cpu().numpy()  # ID классов в numpy массиве
-
+    img_size = int(axial_segmentations.orig_shape[0])
+    logger.info(f"img_size {img_size}")
     # Инициализируем словарь для хранения масок по классам
     class_images = {
         "bone": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
