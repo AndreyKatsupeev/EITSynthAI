@@ -63,6 +63,6 @@ This project is funded by Foundation for Assistance to Small Innovative Enterpri
 3. **Поместить веса в директорию weights/**
 4. **Из корня проекта запустить команду**
    ```bash
-   docker compose up --build -d
+   sudo docker compose up --build
 5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
 6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**
