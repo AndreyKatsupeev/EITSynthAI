@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from EITSynthAI.mesh_service.synthetic_datasets_generator import (
+from EITSynthAI.kt_service.ai_tools.femm_tools.synthetic_datasets_generator import (
     load_yolo,
     femm_create_problem,
     femm_add_contour

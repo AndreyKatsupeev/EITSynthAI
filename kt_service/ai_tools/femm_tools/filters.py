@@ -1,7 +1,8 @@
-###Data filters for sh**** input data
+# Data filters for sh**** input data
 import numpy as np
 import numpy.typing as npt
 import math
+
 
 def calc_lin_coef(point1, point2)->tuple[float, float]:
     """
@@ -19,7 +20,8 @@ def calc_lin_coef(point1, point2)->tuple[float, float]:
     k = - (y2 - y1)/(x1 - x2)
     b = - (x2*y1 - x1*y2)/(x1 - x2)
     return (k, b)
-    
+
+
 def calc_dist(point1, point2, typ=None)->float:
     """
     Calculate distance between 2 points by different methods:
@@ -45,6 +47,7 @@ def calc_dist(point1, point2, typ=None)->float:
     else:
         raise ValueError(f'Unknown distance calculation method {typ}')
     return dist
+
 
 def check_point_in_line(filtered_data:npt.NDArray, point, accuracy:float)->bool:
     """
@@ -73,6 +76,7 @@ def check_point_in_line(filtered_data:npt.NDArray, point, accuracy:float)->bool:
         return False
     else:
         return True
+
 
 def filter_degr_polyfit(data:npt.NDArray, min_deg:float, N_points:int)->npt.NDArray:
     """
@@ -215,8 +219,9 @@ def interpolate_surface_step(d:npt.NDArray, por:int, dx:float, borderc:float, th
         dataf = np.append(dataf, polypoints, axis = 0)
     return dataf
 
+
 def interpolate_big_vert_breaks_lin(data:npt.NDArray, Nmax:int)->npt.NDArray:
-    '''
+    """
     if given polygone have big vertical brakes (distance between neighboring points
     more than 4 median distance over all neighboring points)
     add new points in the middle between neighboring points by lenear interpolation
@@ -225,7 +230,7 @@ def interpolate_big_vert_breaks_lin(data:npt.NDArray, Nmax:int)->npt.NDArray:
         Nmax - int number of interpolations
     Returns:
         np.array 2d of floats (polygone coordinates) with interpolated data
-    '''
+    """
     newdata = data.copy()
     N = 0
     while N < Nmax:
@@ -257,8 +262,9 @@ def interpolate_big_vert_breaks_lin(data:npt.NDArray, Nmax:int)->npt.NDArray:
             break
     return newdata
 
-def interpolate_big_vert_breaks_poly(data:npt.NDArray, por:int, N:int)->npt.NDArray:
-    '''
+
+def interpolate_big_vert_breaks_poly(data: npt.NDArray, por: int, N: int) -> npt.NDArray:
+    """
     adds new points by polynomial interpolation to the left and right of polygone
     Args:
         data - np.array 2d of floats (polygone coordinates)
@@ -266,7 +272,7 @@ def interpolate_big_vert_breaks_poly(data:npt.NDArray, por:int, N:int)->npt.NDAr
         N - number of points up and down for polynome determination
     Returns:
         np.array 2d of floats (polygone coordinates) with interpolated data
-    '''
+    """
     newdata = data
     #find first most left point
     i1 = np.where(data[:,0] == np.min(data[:,0]))[0][0] + 1

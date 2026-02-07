@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import tempfile
 import os
-from EITSynthAI.mesh_service.femm_generator import (
+from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import (
     largest_segment_area_index,
     merge_collinear_segments,
     point_line_distance,
@@ -50,7 +50,7 @@ class TestFemmGenerator(unittest.TestCase):
             pixel_spacing=[0.682, 0.682],
             polygons=self.test_polygons,
             show_meshing_result_method="opencv",
-            is_exporting_to_femm=False
+            # is_exporting_to_femm=False
         )
         self.assertIsInstance(img, np.ndarray)
         self.assertEqual(img.ndim, 3)  # RGB изображение
