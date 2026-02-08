@@ -10,10 +10,12 @@ from concurrent.futures import ProcessPoolExecutor
 #import pythoncom
 import re
 import multiprocessing
-
+import logging
 import pyeit.eit.protocol as protocol
 import math
 from pyeit.eit.fem import EITForward
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def get_spirometry_ref(fname:str)->npt.NDArray:
     '''
@@ -236,7 +238,9 @@ def calculate_EIT_projection_pyeit(meshinfo:dict, classes_vals:dict, fwd)->npt.N
     for class_name, class_elements in meshinfo['classes_gr'].items():
         for class_idx in class_elements:
             cond[class_idx] = float(classes_vals[class_name])
+    logger.info(cond)
     v = fwd.solve_eit(perm=cond)
+    logger.info("Task solved")
     return v
 
 def process_EIT_projection(line, classes_vals, meshinfo, fwd):
@@ -326,8 +330,11 @@ def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, 
     condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
     classes_vals = class_to_cond(materials, Freq, classes_list)
     mesh_obj = create_pyeit_model(meshinfo, N_elec)
+    logger.info("Model is created")
     protocol_obj = protocol.create(N_elec, dist_exc=1, step_meas=1, parser_meas="std")
+    logger.info("Protocol is created")
     fwd = EITForward(mesh_obj, protocol_obj)
+    logger.info("Forward task is created")
     task_args = [(line, classes_vals, meshinfo, fwd) for line in condspir]
     with multiprocessing.Pool() as pool:
         v = pool.starmap(process_EIT_projection, task_args)

@@ -446,7 +446,7 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_widt
     outer_contour = None
     outer_contour_class = None
     outer_segment_area = None
-    outer_segment = find_outer_contour(polygons)
+    outer_segment = find_outer_contour(polygons, distance_threshold)
     if skin_width>0:
         outer_segment, polygons = add_skin(outer_segment, polygons, skin_width)
     for k in range(len(polygons)):
@@ -546,7 +546,7 @@ def largest_segment_area_index(polygons):
     return max_index
 
 
-def find_outer_contour(polygons):
+def find_outer_contour(polygons, distance_threshold = 0.1):
     """
         Determines the index (line number) of the contour with the largest area in the input file.
 
@@ -557,6 +557,9 @@ def find_outer_contour(polygons):
             <class_id> x1 y1 x2 y2 ... xn yn. Example:
             ['3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390',
                '3 93 390 93 391 94 392 94 393 95 394 98 394 98 393 97 393 94 390 93 390', ...]
+
+        distance_threshold : float, optional (default=1.3)
+        Distance threshold used when merging collinear segments in the contour.
 
         Returns:
         --------
@@ -584,8 +587,8 @@ def find_outer_contour(polygons):
 
     shapes = []
     for line in polygons:
-        parts = line.strip().split()
-        coords = parts[1:]
+        parts = list(map(float, line.strip().split(' ')))
+        coords = merge_collinear_segments(parts[1:], distance_threshold)
         if len(coords) < 6 or len(coords) % 2 != 0:
             continue
         try:
