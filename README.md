@@ -30,39 +30,16 @@
 - не менее 50 ГБ свободного места на жёстком диске;
 - клавиатура и мышь (или тачпад).
 
-# Инструкция по запуску проекта  
-  
-## Для Windows  
-  
-На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/windows)  
-  
-1. **Скопировать проект**    
-Выполните команду:    
-```bash 
-   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git  
-```
-2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
-3. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**  
-4. **Из корня проекта запустить команду**  
- ```bash 
-   wsl --update  
- ```
-5. **Запустить Docker на ПК**  
-6. **Из корня проекта запустить команду**   
-```
-docker compose up --build -d
-``` 
-7. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**  
-8. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**  
+# Инструкция по запуску проекта 
 
-## Для Linux  
+## OS Linux  
   
 На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/windows)  
   
 1. **Скопировать проект**    
 Выполните команду:    
 ```bash 
-   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git  
+   git clone https://github.com/AndreyKatsupeev/EITSynthAI.git  
 ```
 2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
 3. **Из корня проекта запустить команду**   
