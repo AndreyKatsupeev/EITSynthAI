@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import tempfile
 import os
-from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import (
+from kt_service.ai_tools.mesh_tools.femm_generator import (
     largest_segment_area_index,
     merge_collinear_segments,
     point_line_distance,

@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from EITSynthAI.kt_service.ai_tools.femm_tools.model_generator import (
+from kt_service.ai_tools.femm_tools.model_generator import (
     load_yolo,
     load_mesh,
     check_mesh_nodes,

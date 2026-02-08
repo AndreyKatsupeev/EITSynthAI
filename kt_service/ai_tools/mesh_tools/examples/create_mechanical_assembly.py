@@ -1,4 +1,4 @@
-from EITSynthAI.mesh_service.femm_generator import test_module
+from kt_service_ai_tools.tools.femm_generator import test_module
 
 
 def create_mechanical_assembly():

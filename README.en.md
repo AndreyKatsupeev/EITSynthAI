@@ -44,22 +44,6 @@ PC must have [Docker](https://www.docker.com/products/docker-desktop/) and [git]
    ```
 
 2. **Download model weights from [link](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)** and place them in the weights/ directory
-   ```bash
-   mkdir -p weights
-   
-   # Download the file
-   echo "Downloading model weights..."
-   wget "https://disk.yandex.ru/d/KWZ-lDjv8seAfQ" -O weights/model_weights.pth
-   
-   # Check download success
-   if [ $? -eq 0 ]; then
-       echo "Weights successfully downloaded to weights/model_weights.pth"
-   else
-       echo "Error downloading weights"
-       exit 1
-   fi
-   ```
-
 3. **Install FEMM software. Download from [link](https://www.femm.info/wiki/Download)**  
 4. **From the project root, run the command**  
    ```bash
@@ -94,3 +78,39 @@ PC must have [Docker](https://www.docker.com/products/docker-desktop/) and [git]
 ## Usage Examples
 
 Usage examples are available via [link](https://github.com/AndreyKatsupeev/EITSynthAI/blob/master/kt_service/ai_tools/mesh_tools/examples/README.md).
+
+## Working with the Graphical Interface
+### Mode descriptions are provided on the "Dataset Generation Modes for EIT Description" tab.
+### Do not add files with different extensions or extensions of formats other than (DICOM, jpg, png, NIfTI (.nii)) via Drag and Drop.
+
+## Automatic Mode
+1. **Press the F5 key.**
+2. **In the left sidebar, select `dicom_sequences_auto`.**
+3. **Use Drag and Drop to select a folder containing a DICOM series.**
+4. **Click the "Launch EIT Dataset Generation" button.**
+
+## Manual Mode
+1. **Press the F5 key.**
+2. **In the left sidebar, select `dicom_sequences_custom`.**
+3. **Use Drag and Drop to select a folder containing a DICOM series.**
+4. **Enter the slice number relative to the central one (+1, +2, -1, -2).**
+5. **Press the Enter key.**
+6. **Click the "Launch EIT Dataset Generation" button.**
+
+## Single DICOM Slice Processing Mode
+1. **Press the F5 key.**
+2. **In the left sidebar, select `dicom_frame`.**
+3. **Use Drag and Drop to select a single DICOM slice file.**
+4. **Click the "Launch EIT Dataset Generation" button.**
+
+## Image Processing Mode (jpg, png)
+1. **Press the F5 key.**
+2. **In the left sidebar, select `jpg_png`.**
+3. **Use Drag and Drop to select an image in jpg or png format.**
+4. **Click the "Launch EIT Dataset Generation" button.**
+
+## NIfTI File Processing Mode (.nii)
+1. **Press the F5 key.**
+2. **In the left sidebar, select `nii`.**
+3. **Use Drag and Drop to select a research file in .nii (NIfTI) format.**
+4. **Click the "Launch EIT Dataset Generation" button.**
