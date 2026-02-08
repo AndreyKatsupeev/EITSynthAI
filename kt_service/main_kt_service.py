@@ -2,7 +2,7 @@ import logging
 import numpy
 import zipfile
 import sys
-
+import multiprocessing as mp
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response
 from io import BytesIO
@@ -11,6 +11,8 @@ from PIL import Image
 
 from .ai_tools.ai_tools import DICOMSequencesToMask, DICOMSequencesToMaskCustom, DICOMToMask, ImageToMask, NIIToMask
 from pathlib import Path
+
+mp.set_start_method("spawn", force=True)
 
 # Добавляем папку `kt-service` в PYTHONPATH
 sys.path.append(str(Path(__file__).parent))
