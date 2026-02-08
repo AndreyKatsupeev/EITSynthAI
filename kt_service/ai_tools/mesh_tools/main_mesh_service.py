@@ -20,7 +20,6 @@ class MeshData(BaseModel):
     polygons: List[str]  # Остальные строки с координатами
 
 
-
 @app.post("/createMesh")
 async def create_mesh_from_json(data: MeshData):
     """

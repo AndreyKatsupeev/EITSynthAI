@@ -1,24 +1,26 @@
 from synthetic_datasets_generator import simulate_EIT_monitoring_pyeit
-from kt_service.ai_tools.mesh_tools.mesh_service_trials import *
+from EITSynthAI.kt_service.ai_tools.mesh_tools.mesh_service_trials import *
+from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 import matplotlib.pyplot as plt
 import numpy as np
+import time
+
 
 def test_dataset_generation():
     for i, data in enumerate(get_test_data(), start=1):
         start_meshing_time = time.time()
-        image, meshdata = create_mesh(['0.682', '0.682'], data,
-            8,
-            1.3, 0, True,
-            show_meshing_result_method="no",
-            is_saving_to_file=True,
-            export_filename=f"dataset {i}.{get_dataset_file_format(i)}")
+        image, meshdata = create_mesh(['0.682', '0.682'], data, 8, 1.3, 0,
+                                      True, show_meshing_result_method="no", is_saving_to_file=True,
+                                      export_filename=f"dataset {i}.{get_dataset_file_format(i)}")
         end_meshing_time = time.time()
         print(f"Execution time of mesh creation in dataset {i} with mesh size parameter {8}: {end_meshing_time - start_meshing_time:.2f} seconds")
         filename = f"generation_results_{i}.dat"
         Nmin = 5
         Nspir = 12
         Npoints = 100
-        simulation_results, simulation_time = simulate_EIT_monitoring_pyeit(meshdata, N_spir= Nspir, N_points=Npoints, N_minutes=Nmin, isSaveToFile=True, filename=filename, materials_location=".")
+        simulation_results, simulation_time = simulate_EIT_monitoring_pyeit(meshdata, N_spir=Nspir, N_points=Npoints,
+                                                                            N_minutes=Nmin, isSaveToFile=True,
+                                                                            filename=filename, materials_location=".")
         show_chart(simulation_results, Nspir, Npoints)
         lines_count = 0
         cols_count = 0
@@ -29,11 +31,12 @@ def test_dataset_generation():
                     cols_count = len(line.split(' '))
         print(f"Generated dataset matrix is {cols_count}X{lines_count} size. Generation time is {simulation_time:.2f} seconds ")
 
+
 def show_chart(simulation_results, N_spir, N_points):
-    dt = (60.0) / (N_spir * N_points)
-    y = np.tile(np.array([row.mean() for row in simulation_results]),N_spir)
-    x = np.arange(len(simulation_results)*N_spir) * dt
-    plt.plot(x,y)
+    dt = 60.0 / (N_spir * N_points)
+    y = np.tile(np.array([row.mean() for row in simulation_results]), N_spir)
+    x = np.arange(len(simulation_results) * N_spir) * dt
+    plt.plot(x, y)
     plt.suptitle("График измерительных данных ЭИТ")
     plt.xlabel('Время, с')
     plt.ylabel('Среднее значение потенциалов')
@@ -41,6 +44,6 @@ def show_chart(simulation_results, N_spir, N_points):
     plt.tight_layout()
     plt.show()
 
+
 if __name__ == "__main__":
     test_dataset_generation()
-

@@ -1,6 +1,6 @@
 # generation model in FEMM by coords
-from kt_service.ai_tools.femm_tools.filters import *
-from kt_service.ai_tools.femm_tools.femm_api import *
+from EITSynthAI.kt_service.ai_tools.femm_tools.filters import *
+from EITSynthAI.kt_service.ai_tools.femm_tools.femm_api import *
 import os
 import collections
 from pyeit.mesh.wrapper import PyEITMesh
@@ -398,8 +398,8 @@ def test_module():
     import matplotlib.pyplot as plt
     from pyeit.visual.plot import create_mesh_plot
 
-    borders = load_yolo(r'./models/data/test_data.txt', classes_list)
-    materials = get_materials('./models')
+    borders = load_yolo(r'EITSynthAI/kt_service/ai_tools/femm_tools/data/test_data.txt', classes_list)
+    materials = get_materials('EITSynthAI/kt_service/ai_tools/femm_tools/data')
     testborders = {'muscles': [borders['fat'][2]],
                    'lung': borders['lung'],
                    'bone': borders['bone']}

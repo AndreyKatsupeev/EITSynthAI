@@ -1,68 +1,113 @@
-# Image Segmentation and Synthetic Dataset Generation Library  
+# EITSynthAI - Библиотека для сегментации изображений и генерации синтетических наборов данных
 
-This library is designed to process tomographic images for medical research, enabling segmentation of anatomical structures, finite element mesh generation, and synthetic dataset creation for Electrical Impedance Tomography (EIT).  
+Данная библиотека разработана для обработки томографических изображений медицинских исследований с сегментацией анатомических структур, генерации сетки конечных элементов и создания синтетических наборов данных для электроимпедансной томографии (ЭИТ).
 
-## Features  
-- **Segmentation**: Automatically segment tomographic images into human thoracic cavity organs.  
-- **Finite Element Mesh Generation**: Generate geometry and finite element meshes with predefined conductivity for FEMM software.  
-- **Synthetic Dataset Generation**: Create synthetic EIT datasets for scientific research and experimentation.  
+# Обзор проекта
 
-## Use Cases  
-- Medical research in EIT measurement analysis and synthetic dataset generation.  
-- Finite element model generation for industrial design, game engines, and simulation tasks.  
+Библиотека EITSynthAI предназначена для автоматизированной обработки томографических медицинских изображений, сегментации анатомических структур, генерации синтетических датасетов и моделирования измерительного процесса электроимпедансной томографии (ЭИТ).
 
-## Requirements  
-- Python 3.8+  
-- Required libraries are listed in `requirements.txt`.
+Библиотека может применяться в медицинской визуализации и диагностике для автоматизации сегментации органов грудной полости на снимках компьютерной томографии, магнитно-резонансной томографии и ЭИТ, в научных исследованиях для генерации синтетических данных с целью обучения алгоритмов машинного обучения, включая модели сегментации и реконструкции, для построения сеток конечных элементов для задач биомеханики, электрофизиологии и проектирования медицинских устройств, для создания учебных датасетов для курсов по медицинской информатике, обработке изображений и численным методам, а также для моделирования измерительных процессов, оптимизации протоколов инжектирования и измерений, валидация методов реконструкции электроимпедансной томографии.
 
-# Now library is in early stages of development
+Библиотека реализована в модульной архитектуре, что обеспечивает гибкость, масштабируемость и возможность интеграции с внешними инструментами. Состав модулей приведен ниже:
+
+- Модуль предобработки и сегментации томографических снимков (kt_service). Модуль имеет поддержку форматов DICOM, NIfTI, JPEG, PNG, выполняет автоматическое определение среза между 6 и 7 ребром с использованием нейросетевой модели обнаружения рёбер, выполняет сегментацию тканей (кости, мышцы, жир, лёгкие), нормализацию и фильтрацию изображений. Среднее время обработки одного изображения составляет ~5 мс.
+
+- Модуль генерации сетки конечных элементов (mesh_tools). Модуль выполняет преобразование результатов сегментации в двумерную треугольную сетку с использованием Gmsh и классификацию конечных элементов по принадлежности к анатомическим структурам. Модуль устраняет артефакты сегментации (обрезанные края, шумы, вложенные контуры), а также выполняет экспорт сетки в форматы, совместимые с FEMM и PyEIT.
+
+- Модуль моделирования измерительного процесса ЭИТ (femm_tools). Модуль формирует прямую задачу ЭИТ на основе конечно-элементной сетки, назначает электрические свойства тканей (проводимость, диэлектрическая проницаемость) в зависимости от частоты тока, генерирует синтетические данные измерений, моделирует динамические процессы, такие как дыхание. Модуль интегрирован с FEMM через API для решения задачи растекания токов.
+
+- Модуль генерации синтетических датасетов (synthetic_datasets_generator). Модуль предназначен для создания реалистичных наборов данных для обучения моделей ИИ и аугментации данных на основе физически обоснованных моделей тканей.
+## Требования к библиотеке 
+
+- Python 3.8+
+- Pytorch 1.10+
+
+## Технические характеристики ПК:
+
+- аппаратная платформа, на которой может быть запущена 64-разрядная ОС Ubuntu версии 22.04 LTS или выше или Windows версии 10 и выше;
+- не менее 8 ГБ оперативной памяти;
+- восьмиядерный процессор x86 2.5 ГГц и выше или аналогичный ему;
+- не менее 50 ГБ свободного места на жёстком диске;
+- клавиатура и мышь (или тачпад).
+
+# Инструкция по запуску проекта  
+  
+## Для Windows  
+  
+На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/windows)  
+  
+1. **Скопировать проект**    
+Выполните команду:    
+```bash 
+   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git  
+```
+   2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
+```
+mkdir -p weights
+
+# Скачиваем файл
+echo "Скачивание весов модели..."
+wget "https://disk.yandex.ru/d/KWZ-lDjv8seAfQ" -O weights/model_weights.pth
+
+# Проверяем успешность скачивания
+if [ $? -eq 0 ]; then
+    echo "Веса успешно скачаны в weights/model_weights.pth"
+else
+    echo "Ошибка при скачивании весов"
+    exit 1
+fi
+```
+3. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**  
+4. **Из корня проекта запустить команду**  
+ ```bash 
+   wsl --update  
+ ```
+5. **Запустить Docker на ПК**  
+6. **Из корня проекта запустить команду**   
+```
+docker compose up --build -d
+``` 
+7. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**  
+8. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**  
+
+## Для Linux  
+  
+На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/windows)  
+  
+1. **Скопировать проект**    
+Выполните команду:    
+```bash 
+   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git  
+```
+   2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
+```
+mkdir -p weights
+
+# Скачиваем файл
+echo "Скачивание весов модели..."
+wget "https://disk.yandex.ru/d/KWZ-lDjv8seAfQ" -O weights/model_weights.pth
+
+# Проверяем успешность скачивания
+if [ $? -eq 0 ]; then
+    echo "Веса успешно скачаны в weights/model_weights.pth"
+else
+    echo "Ошибка при скачивании весов"
+    exit 1
+fi
+```
+3. **Из корня проекта запустить команду**   
+```
+docker compose up --build -d
+``` 
+4. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**  
+5. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)** 
+
+## Примеры использования
+
+Примеры использования представлены по [ссылке](https://github.com/AndreyKatsupeev/EITSynthAI/blob/master/kt_service/ai_tools/mesh_tools/examples/README.md).
 
 
-## Contribution
-
-Contributions are welcome! Please create a pull request or submit an issue if you encounter problems or have ideas for improvement.
-
-This project is funded by Foundation for Assistance to Small Innovative Enterprises in the Scientific and Technical Sphere, Russia, Moscow.
-
-# Инструкция по запуску проекта
-
-## Под системой Windows
-
-На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/windows)
-
-1. **Скопировать проект**  
-   Выполните команду:  
-   ```bash
-   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git
-   
-2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
-3. **Поместить веса в директорию weights/**
-4. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**
-5. **Из корня проекта запустить команду**
-   ```bash
-   wsl --update
-6. **Запустить Docker на ПК**
-7. **Из корня проекта запустить команду**
-   ```bash
-   docker compose up --build -d
-8. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
-
-9. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**
 
 
-## Под системой Linux
 
-На ПК должны быть предустановлены [Docker](https://www.docker.com/products/docker-desktop//d/KWZ-lDjv8seAfQ), [git](https://git-scm.com/install/linux)
 
-1. **Скопировать проект**  
-   Выполните команду:  
-   ```bash
-   git clone git@github.com:AndreyKatsupeev/EITSynthAI.git
-   
-2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**
-3. **Поместить веса в директорию weights/**
-4. **Из корня проекта запустить команду**
-   ```bash
-   sudo docker compose up --build
-5. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**
-6. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)**

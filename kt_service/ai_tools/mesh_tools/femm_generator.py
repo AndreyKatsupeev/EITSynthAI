@@ -114,6 +114,7 @@ def build_polygons_with_area(polygons):
             continue
     return result
 
+
 def process_triangle(i, nodes, node_dict, tags, contours, outer_contour_class, outer_contour, skin_width):
     """
             Determines the most appropriate class for a triangle based on maximum area of intersection with given contours.
@@ -262,6 +263,7 @@ def export_mesh_for_femm(filename, class_groups, isSaveToFile = False):
                 f.write(f"{tag_to_index[n1]} {tag_to_index[n2]} {tag_to_index[n3]} {class_id}\n")
         print(f"Mesh exported to: {filename}, finite elements count - {len(triangle_data)}")
     return dictionary_for_femm
+
 
 def show_class(class_groups, class_for_showing=-1):
     """
@@ -574,6 +576,7 @@ def find_outer_contour(polygons):
         - Lines that fail due to incorrect float conversion or topological issues in Shapely
           are safely skipped.
         """
+
     #If we have class 4 in segmentation results than this is outer contour
     for idx, line in enumerate(polygons, start=0):
         if line[0]=='4':
@@ -613,6 +616,7 @@ def find_outer_contour(polygons):
     new_line = " ".join(parts)
     polygons.append(new_line)
     return len(polygons) - 1
+
 
 def merge_collinear_segments(contour, distance_threshold=1.3):
     """
@@ -732,6 +736,7 @@ def add_skin(outer_segment, polygons, skin_width):
 
     # Return the index of the new contour
     return len(polygons) - 1, polygons
+
 
 def test_module():
     test_list = [

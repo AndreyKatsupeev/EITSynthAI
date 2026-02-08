@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
-from EITSynthAI.mesh_service.main_mesh_service import app, MeshData
+from EITSynthAI.kt_service.ai_tools.mesh_tools.main_mesh_service import app, MeshData
 
 
 class TestCreateMeshFromJson(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    @patch('EITSynthAI.mesh_service.main_mesh_service.create_mesh')
+    @patch('EITSynthAI.kt_service.ai_tools.mesh_tools.main_mesh_service.create_mesh')
     def test_create_mesh_from_json_success(self, mock_create_mesh):
         # Подготовка тестовых данных
         test_data = {
@@ -27,7 +27,7 @@ class TestCreateMeshFromJson(unittest.TestCase):
         # Проверка типа содержимого ответа
         self.assertEqual(response.headers["content-type"], "application/json")
 
-    @patch('EITSynthAI.mesh_service.main_mesh_service.create_mesh')
+    @patch('EITSynthAI.kt_service.ai_tools.mesh_tools.main_mesh_service.create_mesh')
     def test_create_mesh_from_json_error(self, mock_create_mesh):
         # Подготовка тестовых данных
         test_data = {
