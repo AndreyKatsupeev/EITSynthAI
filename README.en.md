@@ -84,22 +84,6 @@ PC must have [Docker](https://www.docker.com/products/docker-desktop/) and [git]
    ```
 
 2. **Download model weights from [link](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)** and place them in the weights/ directory
-   ```bash
-   mkdir -p weights
-   
-   # Download the file
-   echo "Downloading model weights..."
-   wget "https://disk.yandex.ru/d/KWZ-lDjv8seAfQ" -O weights/model_weights.pth
-   
-   # Check download success
-   if [ $? -eq 0 ]; then
-       echo "Weights successfully downloaded to weights/model_weights.pth"
-   else
-       echo "Error downloading weights"
-       exit 1
-   fi
-   ```
-
 3. **From the project root, run the command**  
    ```bash
    docker compose up --build -d
