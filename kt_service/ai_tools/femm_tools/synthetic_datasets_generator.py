@@ -1,8 +1,8 @@
 # Modeling for generating synthetic datasets with FEMM
 import femm
 import time
-from EITSynthAI.kt_service.ai_tools.femm_tools.model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list, prepare_mesh_from_femm_generator
-from EITSynthAI.kt_service.ai_tools.femm_tools.femm_api import *
+from kt_service.ai_tools.femm_tools.model_generator import get_materials, create_pyeit_model, prepare_mesh, classes_list, prepare_mesh_from_femm_generator
+from kt_service.ai_tools.femm_tools.femm_api import *
 import numpy as np
 import numpy.typing as npt
 import os

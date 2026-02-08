@@ -1,7 +1,7 @@
 import sys
 import os
 import time
-from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)

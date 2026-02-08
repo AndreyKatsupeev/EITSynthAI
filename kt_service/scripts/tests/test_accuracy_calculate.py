@@ -1,7 +1,7 @@
 import unittest
 import os
 import shutil
-from EITSynthAI.kt_service.scripts.accuracy_calculate import read_yolo_polygons, calculate_iou, evaluate_segmentation
+from kt_service.scripts.accuracy_calculate import read_yolo_polygons, calculate_iou, evaluate_segmentation
 
 
 class TestAccuracyCalculate(unittest.TestCase):

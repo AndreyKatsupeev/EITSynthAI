@@ -4,7 +4,7 @@ import tempfile
 import numpy as np
 import nibabel as nib
 from unittest.mock import patch, MagicMock
-from EITSynthAI.kt_service.scripts.create_axial_dataset_from_nii import (
+from kt_service.scripts.create_axial_dataset_from_nii import (
     show_frontal_slices,
     get_only_body_mask,
     vignetting_image_normalization,

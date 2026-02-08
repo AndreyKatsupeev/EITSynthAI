@@ -1,6 +1,6 @@
 # generation model in FEMM by coords
-from EITSynthAI.kt_service.ai_tools.femm_tools.filters import *
-from EITSynthAI.kt_service.ai_tools.femm_tools.femm_api import *
+from kt_service.ai_tools.femm_tools.filters import *
+from kt_service.ai_tools.femm_tools.femm_api import *
 import os
 import collections
 from pyeit.mesh.wrapper import PyEITMesh

@@ -1,6 +1,6 @@
 from synthetic_datasets_generator import simulate_EIT_monitoring_pyeit
-from EITSynthAI.kt_service.ai_tools.mesh_tools.mesh_service_trials import *
-from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
+from kt_service.ai_tools.mesh_tools.mesh_service_trials import *
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 import matplotlib.pyplot as plt
 import numpy as np
 import time

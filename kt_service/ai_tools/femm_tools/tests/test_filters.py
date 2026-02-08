@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from EITSynthAI.kt_service.ai_tools.femm_tools.filters import (
+from kt_service.ai_tools.femm_tools.filters import (
     calc_lin_coef,
     calc_dist,
     check_point_in_line,
