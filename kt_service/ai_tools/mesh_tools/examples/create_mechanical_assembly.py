@@ -1,92 +1,82 @@
-from kt_service_ai_tools.tools.femm_generator import test_module
+from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
+import math
 
 
-def create_mechanical_assembly():
-    """Создает сложный механический узел"""
-    import math
-
+def create_contours():
+    """Создает настоящую шестерню с зубьями"""
     contours = []
 
-    # Основная большая шестерня (внешний контур)
     center_x, center_y = 200, 200
-    radius_outer = 150
-    radius_inner = 100
-    teeth = 12
+    pitch_radius = 120  # радиус делительной окружности
+    addendum = 20  # высота головки зуба
+    dedendum = 15  # высота ножки зуба
+    teeth = 12  # количество зубьев
 
-    # Внешний контур шестерни
+    # 1. Внешний контур (с зубьями)
     gear_points = []
-    for i in range(teeth * 2):
-        angle = i * math.pi / teeth
-        if i % 2 == 0:
-            r = radius_outer
-        else:
-            r = radius_outer - 20
-        x = center_x + r * math.cos(angle)
-        y = center_y + r * math.sin(angle)
-        gear_points.extend([x, y])
+    steps_per_tooth = 10
+
+    for tooth in range(teeth):
+        for step in range(steps_per_tooth):
+            # Угол для текущего шага
+            angle = (tooth + step / steps_per_tooth) * 2 * math.pi / teeth
+
+            # Форма зуба - упрощенная
+            if step < steps_per_tooth / 3:
+                # Подъем к головке зуба
+                r = pitch_radius + dedendum + (addendum * (step * 3 / steps_per_tooth))
+            elif step < 2 * steps_per_tooth / 3:
+                # Верх зуба
+                r = pitch_radius + dedendum + addendum
+            else:
+                # Спуск от зуба
+                r = pitch_radius + dedendum + (addendum * (1 - (step - 2 * steps_per_tooth / 3) * 3 / steps_per_tooth))
+
+            x = center_x + r * math.cos(angle)
+            y = center_y + r * math.sin(angle)
+            gear_points.extend([x, y])
 
     contours.append(f'0 ' + ' '.join(f'{p:.1f}' for p in gear_points))
 
-    # Внутренняя круглая часть
-    circle_points = []
+    # 2. Втулка (внутренний круг)
+    hub_radius = 60
+    hub_points = []
     for i in range(24):
         angle = i * 2 * math.pi / 24
-        x = center_x + radius_inner * math.cos(angle)
-        y = center_y + radius_inner * math.sin(angle)
-        circle_points.extend([x, y])
+        x = center_x + hub_radius * math.cos(angle)
+        y = center_y + hub_radius * math.sin(angle)
+        hub_points.extend([x, y])
 
-    contours.append(f'1 ' + ' '.join(f'{p:.1f}' for p in circle_points))
+    contours.append(f'1 ' + ' '.join(f'{p:.1f}' for p in hub_points))
 
-    # Шпоночный паз
-    contours.append('2 200 80 220 80 220 120 200 120')
+    # # 3. Шпоночный паз
+    # contours.append('2 200 40 220 40 220 80 200 80')
 
-    # Монтажные отверстия (4 штуки)
-    hole_radius = 15
+    # 4. Монтажные отверстия
     for i in range(4):
         angle = i * math.pi / 2
-        hole_x = center_x + 80 * math.cos(angle)
-        hole_y = center_y + 80 * math.sin(angle)
+        hole_x = center_x + 90 * math.cos(angle)
+        hole_y = center_y + 90 * math.sin(angle)
 
-        hole_points = []
-        for j in range(12):
-            a = j * 2 * math.pi / 12
-            x = hole_x + hole_radius * math.cos(a)
-            y = hole_y + hole_radius * math.sin(a)
-            hole_points.extend([x, y])
-
-        contours.append(f'3 ' + ' '.join(f'{p:.1f}' for p in hole_points))
-
-    # Декоративные вырезы
-    for i in range(6):
-        angle = i * math.pi / 3
-        start_x = center_x + 110 * math.cos(angle)
-        start_y = center_y + 110 * math.sin(angle)
-        end_x = center_x + 130 * math.cos(angle)
-        end_y = center_y + 130 * math.sin(angle)
-
-        contours.append(f'4 {start_x:.1f} {start_y:.1f} {end_x:.1f} {end_y:.1f}')
-
-    # Внутренний механизм (малая шестерня)
-    small_gear_x, small_gear_y = 350, 200
-    small_radius = 60
-
-    small_gear_points = []
-    for i in range(8 * 2):
-        angle = i * math.pi / 8
-        if i % 2 == 0:
-            r = small_radius
-        else:
-            r = small_radius - 10
-        x = small_gear_x + r * math.cos(angle)
-        y = small_gear_y + r * math.sin(angle)
-        small_gear_points.extend([x, y])
-
-    contours.append(f'5 ' + ' '.join(f'{p:.1f}' for p in small_gear_points))
-
-    # Соединительная пластина
-    contours.append('6 200 200 350 200 340 180 210 180')
+        # Простой квадрат вместо круга для стабильности
+        contours.append(f'3 {hole_x - 10:.1f} {hole_y - 10:.1f} {hole_x + 10:.1f} {hole_y - 10:.1f} '
+                        f'{hole_x + 10:.1f} {hole_y + 10:.1f} {hole_x - 10:.1f} {hole_y + 10:.1f}')
 
     return contours
 
 
-test_module(create_mechanical_assembly())
+def create_mechanical(polygon):
+    create_mesh(['1', '1'], polygon,
+                7,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="tmp.txt")
+
+
+contours = create_contours()
+
+
+if __name__ == "__main__":
+    create_mechanical(contours)

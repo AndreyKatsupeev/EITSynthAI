@@ -1,9 +1,6 @@
-from kt_service_ai_tools.tools.femm_generator import test_module
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 
-
-def create_architectural_facade():
-    """Создает сложный архитектурный фасад"""
-    contours = [
+contours = [
         # Основной контур здания
         '0 0 0 600 0 600 400 500 400 500 450 100 450 100 400 0 400',
 
@@ -59,7 +56,17 @@ def create_architectural_facade():
         '13 280 20 320 20 320 0 280 0'
     ]
 
-    return contours
+
+def create_architectural_facade(polygon):
+    """Создает сложный архитектурный фасад"""
+    create_mesh(['1', '1'], polygon,
+                7,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="tmp.txt")
 
 
-test_module(create_architectural_facade())
+if __name__ == "__main__":
+    create_architectural_facade(contours)

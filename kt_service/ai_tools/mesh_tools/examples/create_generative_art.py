@@ -1,7 +1,7 @@
-from kt_service_ai_tools.tools.femm_generator import test_module
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 
 
-def create_generative_art():
+def create_contours():
     """Создает абстрактное генеративное искусство"""
     import random
     import math
@@ -72,4 +72,17 @@ def create_generative_art():
     return contours
 
 
-test_module(create_generative_art())
+def create_generative_art(polygon):
+    create_mesh(['1', '1'], polygon,
+                7,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="tmp.txt")
+
+
+contours = create_contours()
+
+if __name__ == "__main__":
+    create_generative_art(contours)
