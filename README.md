@@ -41,22 +41,7 @@
 ```bash 
    git clone git@github.com:AndreyKatsupeev/EITSynthAI.git  
 ```
-   2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
-```
-mkdir -p weights
-
-# Скачиваем файл
-echo "Скачивание весов модели..."
-wget "https://disk.yandex.ru/d/KWZ-lDjv8seAfQ" -O weights/model_weights.pth
-
-# Проверяем успешность скачивания
-if [ $? -eq 0 ]; then
-    echo "Веса успешно скачаны в weights/model_weights.pth"
-else
-    echo "Ошибка при скачивании весов"
-    exit 1
-fi
-```
+2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
 3. **Установить программное обеспечение FEMM. Скачать можно по [ссылке](https://www.femm.info/wiki/Download)**  
 4. **Из корня проекта запустить команду**  
  ```bash 
