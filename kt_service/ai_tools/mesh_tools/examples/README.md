@@ -1,49 +1,69 @@
-# Обзор примеров использования
+# Примеры использования функционала библиотеки
 
-`femm_generator.py` — это инструмент для генерации 2D треугольных сеток из контурных данных с классификацией элементов по классам. Результат может быть экспортирован в формате, совместимом с FEMM (Finite Element Method Magnetics) или визуализирован через Gmsh GUI или OpenCV.
+## Обзор
+
+`femm_generator.py` — это инструмент для генерации 2D треугольных сеток из контурных данных с классификацией элементов по классам. Результат может быть экспортирован в формате, совместимом с FEMM (Finite Element Method Magnetics) или визуализирован через Gmsh GUI.
 
 ## Основные возможности
 
 - Создание треугольной сетки из полигональных контуров
 - Классификация элементов сетки по заданным контурам
+- Добавление "кожи" (внешнего слоя) вокруг основного контура
 - Экспорт в текстовый формат для FEMM
-- Визуализация через Gmsh GUI или OpenCV
+- Визуализация через Gmsh GUI
 - Оптимизация контуров (удаление коллинеарных точек)
 
-## Примеры использования
+## Установка зависимостей
 
-### 1. Проектирование в архитектуре и дизайне
+```bash
+pip install gmsh numpy shapely opencv-python
+```
 
-Файл: `create_architectural_facade.py`
+**Важно:** Для работы с Gmsh GUI требуется установленный Gmsh (версия 4.15.0 или выше). Убедитесь, что на вашем компьютере установлен Gmsh.
+
+### 1. Создание архитектурного фасада
+
+**Файл:** `create_architectural_facade.py`
 
 ```python
-from EITSynthAI.mesh_service.femm_generator import test_module
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
 
-def create_architectural_facade():
+contours = [
+    # Основной контур здания
+    '0 0 0 600 0 600 400 500 400 500 450 100 450 100 400 0 400',
+    # Цокольный этаж
+    '1 20 20 580 20 580 100 20 100',
+    # ... другие контуры
+]
+
+def create_architectural_facade(polygon):
     """Создает сложный архитектурный фасад"""
-    contours = [
-        # Основной контур здания
-        '0 0 0 600 0 600 400 500 400 500 450 100 450 100 400 0 400',
-        # Цокольный этаж
-        '1 20 20 580 20 580 100 20 100',
-        # ... другие контуры
-    ]
-    return contours
+    create_mesh(['1', '1'], polygon,
+                7,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="tmp.txt")
 
-test_module(create_architectural_facade())
+if __name__ == "__main__":
+    create_architectural_facade(contours)
 ```
 
 **Особенности:**
 - Определяет различные архитектурные элементы (этажи, окна, двери, колонны)
 - Использует разные классы для разных элементов
 - Создает реалистичную геометрию здания
+- **Новый параметр:** `is_saving_to_file=True` вместо `is_exporting_to_femm`
 
-### 2. Генеративное искусство - использование кода для создания эстетичных орнаментов
+### 2. Генеративное искусство
 
-Файл: `create_generative_art.py`
+**Файл:** `create_generative_art.py`
 
 ```python
-def create_generative_art():
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
+
+def create_contours():
     """Создает абстрактное генеративное искусство"""
     import random
     import math
@@ -61,46 +81,80 @@ def create_generative_art():
         # ... генерация точек
         
     return contours
+
+def create_generative_art(polygon):
+    create_mesh(['1', '1'], polygon,
+                7,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="tmp.txt")
+
+contours = create_contours()
+
+if __name__ == "__main__":
+    create_generative_art(contours)
 ```
 
 **Особенности:**
 - Создает абстрактные узоры
 - Использует математические функции (синусы, спирали)
 - Включает правильные многоугольники
+- **Структура:** разделена на функцию создания контуров и функцию создания сетки
 
-### 3. Визуализация механических узлов для инженерного ПО
+### 3. Механическая сборка (реалистичная шестерня)
 
-Файл: `create_mechanical_assembly.py`
+**Файл:** `create_mechanical_assembly.py`
 
 ```python
-def create_mechanical_assembly():
-    """Создает сложный механический узел"""
-    import math
-    
+from EITSynthAI.kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
+import math
+
+def create_contours():
+    """Создает настоящую шестерню с зубьями"""
     contours = []
-    
-    # Основная шестерня
+
     center_x, center_y = 200, 200
-    radius_outer = 150
-    teeth = 12
-    
-    # Генерация зубьев шестерни
+    pitch_radius = 120  # радиус делительной окружности
+    addendum = 20  # высота головки зуба
+    dedendum = 15  # высота ножки зуба
+    teeth = 12  # количество зубьев
+
+    # 1. Внешний контур (с зубьями)
     gear_points = []
-    for i in range(teeth * 2):
-        angle = i * math.pi / teeth
-        if i % 2 == 0:
-            r = radius_outer
-        else:
-            r = radius_outer - 20
-        # ... расчет точек
-        
+    steps_per_tooth = 10
+
+    for tooth in range(teeth):
+        for step in range(steps_per_tooth):
+            # Угол для текущего шага
+            angle = (tooth + step / steps_per_tooth) * 2 * math.pi / teeth
+            # ... расчет радиуса и координат
+            
+    contours.append(f'0 ' + ' '.join(f'{p:.1f}' for p in gear_points))
+    
     return contours
+
+def create_mechanical(polygon):
+    create_mesh(['1', '1'], polygon,
+                7,
+                1.3, 1, True,
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="tmp.txt")
+
+contours = create_contours()
+
+if __name__ == "__main__":
+    create_mechanical(contours)
 ```
 
 **Особенности:**
-- Создает точную механическую геометрию
-- Включает шестерни с зубьями
-- Добавляет монтажные отверстия и соединительные элементы
+- Создает реалистичную шестерню с правильной формой зубьев
+- Использует параметры зубчатого зацепления (делительная окружность, головка, ножка)
+- Заменяет круги на квадраты для монтажных отверстий (для стабильности)
+- **Обновленный алгоритм:** более точное моделирование зубьев шестерни
 
 ## Как создать свой собственный пример
 
@@ -115,12 +169,10 @@ def create_mechanical_assembly():
 - `class_id` — целое число, идентификатор класса (0, 1, 2, ...)
 - `x1 y1, x2 y2, ...` — координаты вершин полигона
 
-### Шаг 2: Создайте функцию-генератор
+### Шаг 2: Создайте функцию-генератор контуров
 
 ```python
-from EITSynthAI.mesh_service.femm_generator import test_module
-
-def my_custom_example():
+def create_my_contours():
     """Описание вашего примера"""
     contours = []
     
@@ -136,42 +188,45 @@ def my_custom_example():
     return contours
 ```
 
-### Шаг 3: Настройте параметры генерации сетки
+### Шаг 3: Создайте функцию генерации сетки
 
 ```python
-# Основная функция для создания сетки
-def create_mesh(
-    pixel_spacing,          # Соотношение пиксель/мм [x, y]
-    polygons,               # Список контуров
-    lc=7,                   # Размер элемента сетки
-    distance_threshold=1.3, # Порог для слияния коллинеарных точек
-    skin_width=0,           # Толщина "кожи" (0 - нет, -1 - внутренняя)
-    is_show_inner_contours=False, # Показывать внутренние контуры
-    show_meshing_result_method="opencv", # "gmsh", "opencv" или "no"
-    number_of_showed_class=-1,    # Какой класс скрыть (-1 - все видимы)
-    is_exporting_to_femm=True,    # Экспорт в FEMM
-    export_filename="output.txt"  # Имя файла для экспорта
-)
+from kt_service.ai_tools.mesh_tools.femm_generator import create_mesh
+
+def create_my_mesh(polygon):
+    create_mesh(['1', '1'], polygon,
+                7,  # Размер элемента сетки
+                1.3,  # Порог для слияния коллинеарных точек
+                1,  # Толщина "кожи"
+                True,  # Показывать внутренние контуры
+                show_meshing_result_method="gmsh",
+                number_of_showed_class=3,
+                is_saving_to_file=True,
+                export_filename="my_output.txt")
 ```
 
 ### Шаг 4: Запустите генерацию
 
 ```python
-# Способ 1: Используйте тестовую функцию
-test_module(my_custom_example())
+if __name__ == "__main__":
+    contours = create_my_contours()
+    create_my_mesh(contours)
+```
 
-# Способ 2: Вызовите create_mesh напрямую
-from femm_generator import create_mesh
+## Параметры функции `create_mesh`
 
-result = create_mesh(
-    pixel_spacing=[1, 1],
-    polygons=my_custom_example(),
-    lc=5,
-    skin_width=0,
-    is_show_inner_contours=True,
-    show_meshing_result_method="opencv",
-    is_exporting_to_femm=True,
-    export_filename="my_mesh.txt"
+```python
+create_mesh(
+    pixel_spacing,          # Соотношение пиксель/мм [x, y] (например ['1', '1'])
+    polygons,               # Список контуров
+    lc=7,                   # Размер элемента сетки (меньше = мельче сетка)
+    distance_threshold=1.3, # Порог для слияния коллинеарных точек
+    skin_width=0,           # Толщина "кожи" (0 - нет, >0 - добавляет внешний слой)
+    is_show_inner_contours=False, # Показывать внутренние контуры
+    show_meshing_result_method="gmsh", # "gmsh" (GUI) или "no" (без визуализации)
+    number_of_showed_class=-1,    # Какой класс скрыть (-1 - все видимы)
+    is_saving_to_file=True,       # Сохранять в файл (ЗАМЕНА is_exporting_to_femm)
+    export_filename="output.txt"  # Имя файла для экспорта
 )
 ```
 
@@ -189,11 +244,11 @@ result = create_mesh(
 ### 3. **Оптимизация геометрии**
 - Избегайте очень маленьких элементов
 - Используйте `distance_threshold` для упрощения контуров
-- Удаляйте коллинеарные точки для уменьшения сложности
+- Для сложных кривых используйте больше точек
 
 ### 4. **Пример простого прямоугольника**
 ```python
-# Прямоугольник 100x100
+# Прямоугольник 100x100 с отверстием
 contours = [
     '0 0 0 100 0 100 100 0 100',  # Внешний контур
     '1 20 20 80 20 80 80 20 80'   # Внутреннее отверстие
@@ -204,7 +259,8 @@ contours = [
 ```python
 import math
 
-def create_circle(cx, cy, radius, segments=20, class_id=0):
+def create_circle_contour(cx, cy, radius, segments=24, class_id=0):
+    """Создает контур круга как многоугольник"""
     points = []
     for i in range(segments):
         angle = i * 2 * math.pi / segments
@@ -220,14 +276,13 @@ def create_circle(cx, cy, radius, segments=20, class_id=0):
 
 ## Обработка ошибок
 
-1. **Нечетное количество координат** — убедитесь, что у каждого контура четное количество чисел (пары x,y)
-2. **Некорректный class_id** — должен быть целым числом
-3. **Пересекающиеся контуры** — избегайте пересечений между контурами одного класса
-4. **Очень маленькие элементы** — увеличьте `lc` или упростите геометрию
+2. **Нечетное количество координат** — убедитесь, что у каждого контура четное количество чисел (пары x,y)
+3. **Некорректный class_id** — должен быть целым числом
+4. **Пересекающиеся контуры** — избегайте пересечений между контурами одного класса
 
 ## Выходные данные
 
-### 1. **FEMM-формат файла**
+### 1. **FEMM-формат файла** (экспортируется при `is_saving_to_file=True`)
 ```
 # NODES
 1 0.000000 0.000000
@@ -240,32 +295,18 @@ def create_circle(cx, cy, radius, segments=20, class_id=0):
 ...
 ```
 
-### 2. **Визуализация**
-- Gmsh GUI: интерактивный просмотр
-- OpenCV изображение: сохранение как PNG/JPG
+### 2. **Визуализация через Gmsh GUI**
+- Интерактивный просмотр сетки
+- Навигация и масштабирование
 
-## Расширенные возможности
+## Запуск примеров
 
-### Выборка определенного класса
-```python
-# Показать только элементы класса 2
-result = create_mesh(
-    polygons=my_example(),
-    show_meshing_result_method="gmsh",
-    number_of_showed_class=2,
-    # ... другие параметры
-)
+Каждый пример можно запустить независимо:
+
+```bash
+python create_architectural_facade.py
+python create_generative_art.py
+python create_mechanical_assembly.py
 ```
 
-## Тестирование
 
-Для быстрой проверки используйте встроенную тестовую функцию:
-```python
-from femm_generator import test_module
-
-# Тестовый пример из файла
-test_module()
-
-# Или ваш собственный пример
-test_module(my_custom_example())
-```

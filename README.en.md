@@ -44,6 +44,9 @@ PC must have [Docker](https://www.docker.com/products/docker-desktop/) and [git]
    ```
 
 2. **Download model weights from [link](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)** and place them in the weights/ directory
+   ```bash
+   mkdir -p weights
+   ```
 3. **Install FEMM software. Download from [link](https://www.femm.info/wiki/Download)**  
 4. **From the project root, run the command**  
    ```bash
@@ -68,6 +71,10 @@ PC must have [Docker](https://www.docker.com/products/docker-desktop/) and [git]
    ```
 
 2. **Download model weights from [link](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)** and place them in the weights/ directory
+   ```bash
+   mkdir -p weights
+   ```
+   
 3. **From the project root, run the command**  
    ```bash
    docker compose up --build -d

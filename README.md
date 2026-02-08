@@ -38,14 +38,18 @@
   
 1. **Скопировать проект**    
 Выполните команду:    
-```bash 
-   git clone https://github.com/AndreyKatsupeev/EITSynthAI.git  
-```
-2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)**  и поместить веса в директорию weights/
+    ```bash 
+       git clone https://github.com/AndreyKatsupeev/EITSynthAI.git  
+    ```
+2. **Скачать веса модели по [ссылке](https://disk.yandex.ru/d/KWZ-lDjv8seAfQ)** и поместить вручную веса в директорию weights/
+    ```bash
+    mkdir -p weights
+    ```
+
 3. **Из корня проекта запустить команду**   
-```
-docker compose up --build -d
-``` 
+    ```bash
+    docker compose up --build -d
+    ``` 
 4. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**  
 5. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)** 
 
