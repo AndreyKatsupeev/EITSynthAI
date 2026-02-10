@@ -27,28 +27,30 @@ dicom_seq_to_mask_frame = DICOMToMask()
 image_axial_slice_to_mask = ImageToMask()
 nii_seq_to_mask = NIIToMask()
 
+logger.info("🚀 Запущен main_kt_service 🚀")
+
 
 @app.post("/uploadDicomSequence")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        logger.info("Запущен метод uploadDicomSequence")
+        logger.info("✅ Запущен метод uploadDicomSequence")
         contents = await file.read()
         zip_buffer = BytesIO(contents)
         answer = dicom_seq_to_mask.get_coordinate_slice_from_dicom(zip_buffer)
         # Возвращаем JSON с изображением и временем выполнения
         return answer
     except zipfile.BadZipFile:
-        logger.error("Загруженный файл не является корректным ZIP-архивом")
+        logger.error("🔴 Загруженный файл не является корректным ZIP-архивом")
         raise HTTPException(status_code=400, detail="Загруженный файл не является корректным ZIP-архивом")
     except Exception as e:
-        logger.error(f"Ошибка при обработке файла: {e}", exc_info=True)
+        logger.error(f"🔴 Ошибка при обработке файла: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка при обработке файла: {str(e)}")
 
 
 @app.post("/uploadDicomSequenceCustom")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        logger.info("Запущен метод uploadDicomSequenceCustom")
+        logger.info("✅ Запущен метод uploadDicomSequenceCustom")
         contents = await file.read()
         zip_buffer = BytesIO(contents)
         custom_number_slise = 0
@@ -67,7 +69,7 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/uploadDicomFrame")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        logger.info("Запущен метод uploadDicomFrame")
+        logger.info("✅ Запущен метод uploadDicomFrame")
         contents = await file.read()
         zip_buffer = BytesIO(contents)
         custom_number_slise = 0
@@ -86,7 +88,7 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/uploadImageAxialSlice")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        logger.info("Запущен метод uploadImageAxialSlice")
+        logger.info("✅ Запущен метод uploadImageAxialSlice")
         contents = await file.read()
         zip_buffer = BytesIO(contents)
 
@@ -109,7 +111,7 @@ async def upload_file(file: UploadFile = File(...)):
                 # Читаем изображение с помощью PIL
                 image = Image.open(image_file)
                 image = numpy.array(image)
-                logger.info(f"Получено изображение разрешением {image.shape}")
+                logger.info(f"✅ Получено изображение разрешением {image.shape}")
                 answer = image_axial_slice_to_mask.get_coordinate_slice_from_image(image)
 
         return answer
@@ -125,7 +127,7 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/uploadNII")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        logger.info("Запущен метод uploadNII")
+        logger.info("✅ Запущен метод uploadNII")
         contents = await file.read()
         zip_buffer = BytesIO(contents)
         answer = nii_seq_to_mask.get_coordinate_slice_from_nii(zip_buffer)
