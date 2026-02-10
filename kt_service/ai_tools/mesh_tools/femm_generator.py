@@ -439,51 +439,55 @@ def create_mesh(pixel_spacing, polygons, lc=7, distance_threshold=1.3, skin_widt
       `divide_triangles_into_groups`, `show_class`, `export_mesh_for_femm`.
     - Uses the `gmsh` Python API.
     """
-    mesh_image = np.array([512, 512, 3])
-    gmsh.initialize()
-    gmsh.option.setNumber("General.Terminal", 0)
-    contours = []
-    outer_contour = None
-    outer_contour_class = None
-    outer_segment_area = None
-    outer_segment = find_outer_contour(polygons)
-    if skin_width>0:
-        outer_segment, polygons = add_skin(outer_segment, polygons, skin_width)
-    for k in range(len(polygons)):
-        geometry_points = []
-        geometry_lines = []
-        area = list(map(float, polygons[k].strip().split(' ')))
-        if k != outer_segment:
-            contours.append(area)
-        area = [area[0]] + merge_collinear_segments(area[1:], distance_threshold)
-        if k == outer_segment or is_show_inner_contours:
-            for i in range(1, len(area) - 1):
-                if i % 2:
-                    geometry_points.append(gmsh.model.geo.add_point(area[i], area[i + 1], 0, lc))
-            for i in range(-1, len(geometry_points) - 1):
-                if geometry_points[i] != geometry_points[i + 1]:
-                    geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i + 1]))
-            if k == outer_segment:
-                outer_contour_class = int(area[0])
-                outer_segment_area = area
-                outer_contour = gmsh.model.geo.add_curve_loop(geometry_lines)
+    img, mesh_data = [], []
+    try:
+        mesh_image = np.array([512, 512, 3])
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 0)
+        contours = []
+        outer_contour = None
+        outer_contour_class = None
+        outer_segment_area = None
+        outer_segment = find_outer_contour(polygons)
+        if skin_width>0:
+            outer_segment, polygons = add_skin(outer_segment, polygons, skin_width)
+        for k in range(len(polygons)):
+            geometry_points = []
+            geometry_lines = []
+            area = list(map(float, polygons[k].strip().split(' ')))
+            if k != outer_segment:
+                contours.append(area)
+            area = [area[0]] + merge_collinear_segments(area[1:], distance_threshold)
+            if k == outer_segment or is_show_inner_contours:
+                for i in range(1, len(area) - 1):
+                    if i % 2:
+                        geometry_points.append(gmsh.model.geo.add_point(area[i], area[i + 1], 0, lc))
+                for i in range(-1, len(geometry_points) - 1):
+                    if geometry_points[i] != geometry_points[i + 1]:
+                        geometry_lines.append(gmsh.model.geo.add_line(geometry_points[i], geometry_points[i + 1]))
+                if k == outer_segment:
+                    outer_contour_class = int(area[0])
+                    outer_segment_area = area
+                    outer_contour = gmsh.model.geo.add_curve_loop(geometry_lines)
 
-    gmsh.model.geo.add_plane_surface([outer_contour])
-    gmsh.model.geo.removeAllDuplicates()
-    gmsh.model.geo.synchronize()
+        gmsh.model.geo.add_plane_surface([outer_contour])
+        gmsh.model.geo.removeAllDuplicates()
+        gmsh.model.geo.synchronize()
 
-    # Generate mesh:
-    gmsh.model.mesh.generate(2)
+        # Generate mesh:
+        gmsh.model.mesh.generate(2)
 
-    class_groups = divide_triangles_into_groups(contours, outer_contour_class, outer_segment_area, skin_width)
-    img = None
-    if show_meshing_result_method == "gmsh":
-        show_class(class_groups, number_of_showed_class)
-    elif show_meshing_result_method == "opencv":
-        img = get_image(class_groups)
-    mesh_data = export_mesh_for_femm(export_filename, class_groups, is_saving_to_file)
-    # It finalizes the Gmsh API
-    gmsh.finalize()
+        class_groups = divide_triangles_into_groups(contours, outer_contour_class, outer_segment_area, skin_width)
+        img = None
+        if show_meshing_result_method == "gmsh":
+            show_class(class_groups, number_of_showed_class)
+        elif show_meshing_result_method == "opencv":
+            img = get_image(class_groups)
+        mesh_data = export_mesh_for_femm(export_filename, class_groups, is_saving_to_file)
+        # It finalizes the Gmsh API
+        gmsh.finalize()
+    except:
+        logger.error(f"🔴 Ошибка в функции create_mesh")
     return img, mesh_data
 
 

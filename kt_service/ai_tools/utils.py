@@ -15,10 +15,12 @@ from fastapi.responses import JSONResponse
 from pydicom.filebase import DicomBytesIO
 from PIL import Image
 from scipy.ndimage import label
+from pydicom import config as config_for_disable_dicom_warnings
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+config_for_disable_dicom_warnings.settings.reading_validation_mode = config_for_disable_dicom_warnings.IGNORE
 
 
 def create_dicom_dict(zip_file):
@@ -34,32 +36,37 @@ def create_dicom_dict(zip_file):
         custom_input: число для кастомной настройки среза. Если его нет в zip_file, устанавливается 0
 
     """
-    series_dict = defaultdict(list)
+    largest_series = None
     custom_input = None
+    try:
+        series_dict = defaultdict(list)
+        
 
-    # Проверяем наличие custom_input.txt
-    if 'custom_input.txt' in zip_file.namelist():
-        with zip_file.open('custom_input.txt') as f:
-            custom_input = f.read().decode('utf-8').strip()
+        # Проверяем наличие custom_input.txt
+        if 'custom_input.txt' in zip_file.namelist():
+            with zip_file.open('custom_input.txt') as f:
+                custom_input = f.read().decode('utf-8').strip()
 
-    # Группируем все серии DICOM
-    for file_name in zip_file.namelist():
-        if file_name.lower().endswith('.dcm') or not file_name.lower().endswith('.txt'):
-            try:
-                with zip_file.open(file_name) as file:
-                    dicom_data = DicomBytesIO(file.read())
-                    dicom_slice = pydicom.dcmread(dicom_data)
-                    series_dict[dicom_slice.SeriesInstanceUID].append(dicom_slice)
-            except Exception as e:
-                print(f"Ошибка при обработке файла {file_name}: {str(e)}")
-                continue
+        # Группируем все серии DICOM
+        for file_name in zip_file.namelist():
+            if file_name.lower().endswith('.dcm') or not file_name.lower().endswith('.txt'):
+                try:
+                    with zip_file.open(file_name) as file:
+                        dicom_data = DicomBytesIO(file.read())
+                        dicom_slice = pydicom.dcmread(dicom_data)
+                        series_dict[dicom_slice.SeriesInstanceUID].append(dicom_slice)
+                except Exception as e:
+                    print(f"Ошибка при обработке файла {file_name}: {str(e)}")
+                    continue
 
-    # Находим самую большую серию
-    if not series_dict:
-        return [], custom_input
-    if custom_input is None:
-        custom_input = 0
-    largest_series = max(series_dict.values(), key=len)
+        # Находим самую большую серию
+        if not series_dict:
+            return [], custom_input
+        if custom_input is None:
+            custom_input = 0
+        largest_series = max(series_dict.values(), key=len)
+    except:
+        logger.error("🔴 Ошибка в функции create_dicom_dict")
     return largest_series, int(custom_input)
 
 
@@ -83,20 +90,24 @@ def convert_to_3d(slices):
        patient_orientation: Ориентация пациента
 
     """
-    # Сортировка срезов по положению (при необходимости)
-    slices.sort(key=lambda x: int(x.InstanceNumber))
-    # Извлечение массива пиксельных данных
-    pixel_data = [slice_dicom.pixel_array for slice_dicom in slices]
-    # Получение позиции пациента
-    patient_position = slices[0][0x0018, 0x5100].value
-    image_orientation = slices[0][0x0020, 0x0037].value  # Ориентация изображения (6 чисел)
+    img_3d, patient_position, image_orientation, patient_orientation = [], [], [], []
     try:
-        patient_orientation = slices[0][0x0020, 0x0020].value  # Ориентация пациента (например, A\P)
+        # Сортировка срезов по положению (при необходимости)
+        slices.sort(key=lambda x: int(x.InstanceNumber))
+        # Извлечение массива пиксельных данных
+        pixel_data = [slice_dicom.pixel_array for slice_dicom in slices]
+        # Получение позиции пациента
+        patient_position = slices[0][0x0018, 0x5100].value
+        image_orientation = slices[0][0x0020, 0x0037].value  # Ориентация изображения (6 чисел)
+        try:
+            patient_orientation = slices[0][0x0020, 0x0020].value  # Ориентация пациента (например, A\P)
+        except:
+            patient_orientation = None
+        # Стекирование в 3D-массив
+        img_3d = numpy.stack(pixel_data,
+                            axis=-1)  # Axis=-1 для аксиальных срезов, предполагая, что третий измерение - это срезы
     except:
-        patient_orientation = None
-    # Стекирование в 3D-массив
-    img_3d = numpy.stack(pixel_data,
-                         axis=-1)  # Axis=-1 для аксиальных срезов, предполагая, что третий измерение - это срезы
+        logger.error(f"🔴 Ошибка в функции convert_to_3d, slices {slices}")
     return img_3d, patient_position, image_orientation, patient_orientation
 
 
@@ -114,39 +125,41 @@ def axial_to_sagittal(img_3d, patient_position, image_orientation, patient_orien
         sagittal_view: Набор фронтальных срезов без нормализации
     """
     sagittal_view = None
-    
-    # Перестановка осей для преобразования аксиального в сагиттальный вид
-    if patient_position == 'FFS':
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
-        sagittal_view = numpy.flipud(sagittal_view)
-    elif patient_position == 'HFS':
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
-    else:
-        # Значение по умолчанию для других позиций
-        sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
-        # Или можно выбросить исключение, если позиция не поддерживается:
-        # raise ValueError(f"Unsupported patient position: {patient_position}")
+    try:       
+        # Перестановка осей для преобразования аксиального в сагиттальный вид
+        if patient_position == 'FFS':
+            sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+            sagittal_view = numpy.flipud(sagittal_view)
+        elif patient_position == 'HFS':
+            sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+        else:
+            # Значение по умолчанию для других позиций
+            sagittal_view = numpy.transpose(img_3d, (2, 1, 0))
+            # Или можно выбросить исключение, если позиция не поддерживается:
+            # raise ValueError(f"Unsupported patient position: {patient_position}")
 
-    # Коррекция на основе ImageOrientationPatient
-    # Векторы ImageOrientationPatient описывают ориентацию строк и столбцов изображения
-    # Первые три числа — направление строк (обычно X), последние три — направление столбцов (обычно Y)
-    row_orientation = numpy.array(image_orientation[:3])  # Направление строк
-    col_orientation = numpy.array(image_orientation[3:])  # Направление столбцов
+        # Коррекция на основе ImageOrientationPatient
+        # Векторы ImageOrientationPatient описывают ориентацию строк и столбцов изображения
+        # Первые три числа — направление строк (обычно X), последние три — направление столбцов (обычно Y)
+        row_orientation = numpy.array(image_orientation[:3])  # Направление строк
+        col_orientation = numpy.array(image_orientation[3:])  # Направление столбцов
 
-    # Если направление строк или столбцов указывает в противоположную сторону, переворачиваем изображение
-    if row_orientation[0] == -1:  # Если ось X направлена влево
-        sagittal_view = numpy.flip(sagittal_view, axis=1)  # Переворот по оси Y
-    if col_orientation[1] == -1:  # Если ось Y направлена назад
-        sagittal_view = numpy.flip(sagittal_view, axis=2)  # Переворот по оси Z
+        # Если направление строк или столбцов указывает в противоположную сторону, переворачиваем изображение
+        if row_orientation[0] == -1:  # Если ось X направлена влево
+            sagittal_view = numpy.flip(sagittal_view, axis=1)  # Переворот по оси Y
+        if col_orientation[1] == -1:  # Если ось Y направлена назад
+            sagittal_view = numpy.flip(sagittal_view, axis=2)  # Переворот по оси Z
 
-    # Коррекция на основе PatientOrientation
-    # PatientOrientation описывает, как пациент ориентирован относительно плоскости изображения
-    if patient_position != 'HFS':
-        if patient_orientation:
-            if patient_orientation[0] == 'L':
-                sagittal_view = numpy.fliplr(sagittal_view)  # Переворот по горизонтали (левая сторона станет слева)
-            if patient_orientation[1] == 'P':
-                sagittal_view = numpy.flipud(sagittal_view)  # Переворот по вертикали (задняя часть станет внизу)
+        # Коррекция на основе PatientOrientation
+        # PatientOrientation описывает, как пациент ориентирован относительно плоскости изображения
+        if patient_position != 'HFS':
+            if patient_orientation:
+                if patient_orientation[0] == 'L':
+                    sagittal_view = numpy.fliplr(sagittal_view)  # Переворот по горизонтали (левая сторона станет слева)
+                if patient_orientation[1] == 'P':
+                    sagittal_view = numpy.flipud(sagittal_view)  # Переворот по вертикали (задняя часть станет внизу)
+    except:
+        logger.error("🔴 Ошибка в функции axial_to_sagittal")
     return sagittal_view
 
 
@@ -231,23 +244,28 @@ def search_number_axial_slice(detections, custom_number_slise=0, image_width=512
         custom_number_slise: параметр используется, когда выбран режим ручной коррекции выбора среза
     """
     number_axial_slice_list = []
-    # Получаем абсолютные координаты среза
-    coordinates = detections.xyxy
-
-    # Находим середину изображения
-    midpoint = image_width / 2
-    # Фильтрация координат, оставляем только те, что правее середины
-    right_side_coordinates = [box for box in coordinates if box[0] > midpoint]
-    # Сортировка по оси Y (по второму элементу каждого бокса)
-    sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
-    # Вычисляем номер среза между 6 и 7 ребром (нумерация рёбер с нуля)
-    number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
-    # На всякий получаем номер шестого ребра
-    number_axial_slice_list.append(int(sorted_right_side_coordinates[5][1]))
-    # На всякий получаем номер седьмого ребра
-    number_axial_slice_list.append(int(sorted_right_side_coordinates[6][1]))
-    # Корректируем номер среза между 6 и 7 ребром, если выбран режим с коррекцией. Иначе прибавляется 0
-    number_axial_slice_list.append(number_axial_slice + custom_number_slise)
+    try:
+        # Получаем абсолютные координаты среза
+        coordinates = detections.xyxy
+        logger.info(f"✅ Функция search_number_axial_slice | абсолютные координаты среза {coordinates}")
+        # Находим середину изображения
+        midpoint = image_width / 2
+        logger.info(f"✅ Функция search_number_axial_slice | midpoint {midpoint}")
+        # Фильтрация координат, оставляем только те, что правее середины
+        right_side_coordinates = [box for box in coordinates if box[0] > midpoint]
+        # Сортировка по оси Y (по второму элементу каждого бокса)
+        sorted_right_side_coordinates = sorted(right_side_coordinates, key=lambda x: x[1])
+        logger.info(f"✅ Функция search_number_axial_slice | sorted_right_side_coordinates (координаты правых рёбер) {sorted_right_side_coordinates}")
+        # Вычисляем номер среза между 6 и 7 ребром (нумерация рёбер с нуля)
+        number_axial_slice = int((abs(sorted_right_side_coordinates[5][1] + sorted_right_side_coordinates[6][1])) / 2)
+        # На всякий получаем номер шестого ребра
+        number_axial_slice_list.append(int(sorted_right_side_coordinates[5][1]))
+        # На всякий получаем номер седьмого ребра
+        number_axial_slice_list.append(int(sorted_right_side_coordinates[6][1]))
+        # Корректируем номер среза между 6 и 7 ребром, если выбран режим с коррекцией. Иначе прибавляется 0
+        number_axial_slice_list.append(number_axial_slice + custom_number_slise)
+    except:
+        logger.error(f"🔴 Ошибка в функции search_number_axial_slice | sorted_right_side_coordinates_len {len(sorted_right_side_coordinates)} | sorted_right_side_coordinates (координаты правых рёбер) {sorted_right_side_coordinates}")
     return number_axial_slice_list
 
 
@@ -274,18 +292,23 @@ def classic_norm(volume, window_level=40, window_width=400):
         - Мягкие ткани: level=40, width=400
         - Костная ткань: level=400, width=2000
     """
-    # Вычисляем границы окна нормализации
-    hu_min = window_level - window_width // 2
-    hu_max = window_level + window_width // 2
+    normalized = []
+    try:
+        logger.info(f"✅ Функция classic_norm | len volume {len(volume)} | window_level {window_level} | window_width {window_width}")
+        # Вычисляем границы окна нормализации
+        hu_min = window_level - window_width // 2
+        hu_max = window_level + window_width // 2
 
-    # Обрезаем значения за пределами окна
-    clipped = numpy.clip(volume, hu_min, hu_max)
+        # Обрезаем значения за пределами окна
+        clipped = numpy.clip(volume, hu_min, hu_max)
 
-    # Линейно нормализуем в диапазон [0, 255] и преобразуем в 8-битный формат
-    normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(numpy.uint8)
+        # Линейно нормализуем в диапазон [0, 255] и преобразуем в 8-битный формат
+        normalized = ((clipped - hu_min) / (hu_max - hu_min) * 255).astype(numpy.uint8)
 
-    # Поворачиваем изображение на 180 градусов (стандартная практика в радиологии)
-    normalized = cv2.rotate(normalized, cv2.ROTATE_180)
+        # Поворачиваем изображение на 180 градусов 
+        normalized = cv2.rotate(normalized, cv2.ROTATE_180)
+    except:
+        logger.error(f"🔴 Ошибка в функции classic_norm | len_volume {len(volume)} | window_level {window_level} | window_width {window_width}")
 
     return normalized
 
@@ -313,102 +336,101 @@ def draw_annotate(ribs_detections, front_slice, axial_slice_list_numbers):
         - Нумерация рёбер идёт сверху вниз (1 - самое верхнее левое ребро)
         - Используется синий цвет для bounding boxes и зелёный для линии-маркера
     """
-    # Инициализируем аннотатор bounding boxes (синий цвет)
-    box_annotator = sv.BoxAnnotator(color=sv.Color.BLUE)
+    try:
+        # Инициализируем аннотатор bounding boxes (синий цвет)
+        box_annotator = sv.BoxAnnotator(color=sv.Color.BLUE)
 
-    # Создаем копию исходного изображения и конвертируем в BGR для цветных аннотаций
-    annotated_image = front_slice.copy()
-    annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
+        # Создаем копию исходного изображения и конвертируем в BGR для цветных аннотаций
+        annotated_image = front_slice.copy()
+        annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
 
-    # 1. Рисуем bounding boxes для всех обнаруженных рёбер
-    annotated_image = box_annotator.annotate(
-        scene=annotated_image,
-        detections=ribs_detections
-    )
+        # 1. Рисуем bounding boxes для всех обнаруженных рёбер
+        annotated_image = box_annotator.annotate(
+            scene=annotated_image,
+            detections=ribs_detections
+        )
 
-    # 2. Добавляем горизонтальную зелёную линию - маркер уровня аксиального среза
-    last_slice_pos = axial_slice_list_numbers[-1]  # Позиция последнего среза
-    annotated_image = cv2.line(
-        img=annotated_image,
-        pt1=(0, last_slice_pos),  # Начало линии (левая граница)
-        pt2=(1000, last_slice_pos),  # Конец линии (правая граница)
-        color=(0, 255, 0),  # Зелёный цвет
-        thickness=1
-    )
-
-    # 3. Фильтрация и нумерация левых рёбер
-    boxes = ribs_detections.xyxy  # Получаем координаты всех bounding boxes
-    mid_x = annotated_image.shape[1] // 2  # Вычисляем середину изображения по X
-
-    # Фильтруем только левые рёбра (центр bbox'а правее середины)
-    left_boxes = []
-    for box in boxes:
-        x1, y1, x2, y2 = box
-        center_x = (x1 + x2) / 2
-        if center_x > mid_x:  # Критерий для левых рёбер
-            left_boxes.append(box)
-
-    left_boxes = numpy.array(left_boxes)  # Конвертируем в numpy array
-
-    # Сортируем левые рёбра по Y-координате (от верхних к нижним)
-    sorted_indices = numpy.argsort(left_boxes[:, 1])
-    sorted_left_boxes = left_boxes[sorted_indices]
-
-    # 4. Нумеруем отсортированные левые рёбра (1 - самое верхнее)
-    for i, box in enumerate(sorted_left_boxes, start=1):
-        x1, y1, x2, y2 = box
-        # Позиция текста - справа от bounding box (+5 пикселей от правой границы)
-        text_position = (int(x2) + 5, int(y2 - 2))
-
-        # Рисуем номер ребра (дважды для лучшей видимости)
-        cv2.putText(
+        # 2. Добавляем горизонтальную зелёную линию - маркер уровня аксиального среза
+        last_slice_pos = axial_slice_list_numbers[-1]  # Позиция последнего среза
+        annotated_image = cv2.line(
             img=annotated_image,
-            text=str(i),
-            org=text_position,
-            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-            fontScale=0.4,
-            color=(255, 0, 0),  # Синий цвет
+            pt1=(0, last_slice_pos),  # Начало линии (левая граница)
+            pt2=(1000, last_slice_pos),  # Конец линии (правая граница)
+            color=(0, 255, 0),  # Зелёный цвет
             thickness=1
         )
 
+        # 3. Фильтрация и нумерация левых рёбер
+        boxes = ribs_detections.xyxy  # Получаем координаты всех bounding boxes
+        mid_x = annotated_image.shape[1] // 2  # Вычисляем середину изображения по X
+
+        # Фильтруем только левые рёбра (центр bbox'а правее середины)
+        left_boxes = []
+        for box in boxes:
+            x1, y1, x2, y2 = box
+            center_x = (x1 + x2) / 2
+            if center_x > mid_x:  # Критерий для левых рёбер
+                left_boxes.append(box)
+
+        left_boxes = numpy.array(left_boxes)  # Конвертируем в numpy array
+
+        # Сортируем левые рёбра по Y-координате (от верхних к нижним)
+        sorted_indices = numpy.argsort(left_boxes[:, 1])
+        sorted_left_boxes = left_boxes[sorted_indices]
+
+        # 4. Нумеруем отсортированные левые рёбра (1 - самое верхнее)
+        for i, box in enumerate(sorted_left_boxes, start=1):
+            x1, y1, x2, y2 = box
+            # Позиция текста - справа от bounding box (+5 пикселей от правой границы)
+            text_position = (int(x2) + 5, int(y2 - 2))
+
+            # Рисуем номер ребра (дважды для лучшей видимости)
+            cv2.putText(img=annotated_image, text=str(i), org=text_position, fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,color=(255, 0, 0), thickness=1)
+    except:
+        logger.error(f"🔴 Ошибка в функции draw_annotate")
+        annotated_image = []
     return annotated_image
 
 
 def overlay_segmentation_masks(segmentation_dict):
-    # Получаем размеры из первого изображения
-    first_key = next(iter(segmentation_dict))
-    height, width = segmentation_dict[first_key].shape[:2]
+    """"""
+    try:
+        # Получаем размеры из первого изображения
+        first_key = next(iter(segmentation_dict))
+        height, width = segmentation_dict[first_key].shape[:2]
 
-    # Создаем пустое RGB изображение
-    overlay = numpy.zeros((height, width, 3), dtype=numpy.uint8)
+        # Создаем пустое RGB изображение
+        overlay = numpy.zeros((height, width, 3), dtype=numpy.uint8)
 
-    # Цвета для разных сегментов (BGR формат)
-    colors = {
-        "adipose": (0, 255, 255),
-        "bone": (255, 255, 255),
-        "muscles": (0, 0, 255),
-        "lung": (255, 255, 0)
-    }
+        # Цвета для разных сегментов (BGR формат)
+        colors = {
+            "adipose": (0, 255, 255),
+            "bone": (255, 255, 255),
+            "muscles": (0, 0, 255),
+            "lung": (255, 255, 0)
+        }
 
-    for name, mask in segmentation_dict.items():
-        # Нормализуем маску (на случай если она не бинарная)
-        if mask.dtype != numpy.uint8:
-            mask = mask.astype(numpy.uint8)
+        for name, mask in segmentation_dict.items():
+            # Нормализуем маску (на случай если она не бинарная)
+            if mask.dtype != numpy.uint8:
+                mask = mask.astype(numpy.uint8)
 
-        # Если маска трехканальная, преобразуем в одноканальную
-        if len(mask.shape) == 3:
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+            # Если маска трехканальная, преобразуем в одноканальную
+            if len(mask.shape) == 3:
+                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
 
-        # Создаем цветную маску
-        color = colors.get(name, [255, 255, 255])
-        colored_mask = numpy.zeros((height, width, 3), dtype=numpy.uint8)
+            # Создаем цветную маску
+            color = colors.get(name, [255, 255, 255])
+            colored_mask = numpy.zeros((height, width, 3), dtype=numpy.uint8)
 
-        # Применяем цвет только к ненулевым пикселям
-        mask_bool = mask > 0
-        colored_mask[mask_bool] = color
+            # Применяем цвет только к ненулевым пикселям
+            mask_bool = mask > 0
+            colored_mask[mask_bool] = color
 
-        # Накладываем на общее изображение
-        overlay = cv2.add(overlay, colored_mask)
+            # Накладываем на общее изображение
+            overlay = cv2.add(overlay, colored_mask)
+    except:
+        logger.error(f"🔴 Ошибка в функции overlay_segmentation_masks | segmentation_dict {segmentation_dict}")
     return overlay
 
 
@@ -441,60 +463,63 @@ def create_segmentations_masks(axial_segmentations, img_size=512):
         - Если модель возвращает неизвестные class_id, они игнорируются
         - Для визуализации используются полупрозрачные цвета
     """
-    # Цветовая схема для разных типов тканей (BGR формат)
-    clrs = {
-        "adipose": (0, 255, 255),  # Желтый для жировой ткани
-        "bone": (255, 255, 255),  # Белый для костной ткани
-        "muscles": (0, 0, 255),  # Красный для мышечной ткани
-        "lung": (255, 255, 0)  # Голубой для легочной ткани
-    }
+    try:
+        # Цветовая схема для разных типов тканей (BGR формат)
+        clrs = {
+            "adipose": (0, 255, 255),  # Желтый для жировой ткани
+            "bone": (255, 255, 255),  # Белый для костной ткани
+            "muscles": (0, 0, 255),  # Красный для мышечной ткани
+            "lung": (255, 255, 0)  # Голубой для легочной ткани
+        }
 
-    # Получаем данные из результатов YOLO
-    mask_coords_list = axial_segmentations.masks.data  # Тензоры с координатами масок
-    class_ids = axial_segmentations.boxes.cls.cpu().numpy()  # ID классов в numpy массиве
-    img_size = int(axial_segmentations.orig_shape[0])
-    logger.info(f"img_size {img_size}")
-    # Инициализируем словарь для хранения масок по классам
-    class_images = {
-        "bone": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
-        "muscles": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
-        "lung": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
-        "adipose": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
-    }
+        # Получаем данные из результатов YOLO
+        mask_coords_list = axial_segmentations.masks.data  # Тензоры с координатами масок
+        class_ids = axial_segmentations.boxes.cls.cpu().numpy()  # ID классов в numpy массиве
+        img_size = int(axial_segmentations.orig_shape[0])
+        logger.info(f"✅ Функция create_segmentations_masks | img_size {img_size}")
+        # Инициализируем словарь для хранения масок по классам
+        class_images = {
+            "bone": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
+            "muscles": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
+            "lung": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8),
+            "adipose": numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
+        }
 
-    # Обрабатываем каждую маску в результатах
-    for i, mask in enumerate(mask_coords_list):
-        # Конвертируем тензор маски в numpy array (если это тензор)
-        if torch.is_tensor(mask):
-            mask = mask.cpu().numpy()
+        # Обрабатываем каждую маску в результатах
+        for i, mask in enumerate(mask_coords_list):
+            # Конвертируем тензор маски в numpy array (если это тензор)
+            if torch.is_tensor(mask):
+                mask = mask.cpu().numpy()
 
-        # Получаем class_id для текущей маски
-        class_id = int(class_ids[i])  # Приводим к int для безопасности
+            # Получаем class_id для текущей маски
+            class_id = int(class_ids[i])  # Приводим к int для безопасности
 
-        # Определяем имя класса по его ID
-        if class_id == 0:
-            class_name = "bone"
-        elif class_id == 1:
-            class_name = "muscles"
-        elif class_id == 2:
-            class_name = "lung"
-        elif class_id == 3:
-            class_name = "adipose"
-        else:
-            continue  # Пропускаем неизвестные классы
+            # Определяем имя класса по его ID
+            if class_id == 0:
+                class_name = "bone"
+            elif class_id == 1:
+                class_name = "muscles"
+            elif class_id == 2:
+                class_name = "lung"
+            elif class_id == 3:
+                class_name = "adipose"
+            else:
+                continue  # Пропускаем неизвестные классы
 
-        # Получаем цвет для текущего класса
-        color = clrs[class_name]
+            # Получаем цвет для текущего класса
+            color = clrs[class_name]
 
-        # Создаем цветную маску (3-канальное изображение)
-        colored_mask = numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
-        # Закрашиваем область маски соответствующим цветом
-        colored_mask[mask > 0] = color
+            # Создаем цветную маску (3-канальное изображение)
+            colored_mask = numpy.zeros((img_size, img_size, 3), dtype=numpy.uint8)
+            # Закрашиваем область маски соответствующим цветом
+            colored_mask[mask > 0] = color
 
-        # Добавляем маску к соответствующему изображению класса
-        # Используем cv2.add для корректного сложения изображений
-        class_images[class_name] = cv2.add(class_images[class_name], colored_mask)
-
+            # Добавляем маску к соответствующему изображению класса
+            # Используем cv2.add для корректного сложения изображений
+            class_images[class_name] = cv2.add(class_images[class_name], colored_mask)
+    except:
+        logger.error(f"🔴 Ошибка в функции create_segmentations_masks | {axial_segmentations}")
+        class_images = []
     return class_images
 
 
@@ -519,42 +544,44 @@ def get_axial_slice_body_mask(ds):
         - Предполагается, что тело пациента - самый большой connected component на срезе
         - Изображение переворачивается по вертикали (flipud) для корректной ориентации
     """
+    only_body_mask = []
+    try:
+        # Получаем и переворачиваем изображение (стандартная практика для DICOM)
+        new_image = ds.pixel_array
+        new_image = numpy.flipud(new_image)  # Отражаем по вертикали для правильной ориентации
 
-    # Получаем и переворачиваем изображение (стандартная практика для DICOM)
-    new_image = ds.pixel_array
-    new_image = numpy.flipud(new_image)  # Отражаем по вертикали для правильной ориентации
+        # Получаем параметры для преобразования в HU
+        rescale_intercept = get_rescale_intercept(ds)
+        rescale_slope = get_rescale_slope(ds)
+        logger.info(f"✅ Функция get_axial_slice_body_mask | rescale_intercept {rescale_intercept} | rescale_slope {rescale_slope}")
+        # Преобразуем в единицы Хаунсфилда (HU)
+        hu_img = numpy.vectorize(get_hu, excluded=['rescale_intercept', 'rescale_slope']) \
+            (new_image, rescale_intercept, rescale_slope).astype(numpy.int16)  # int16 для сохранения всего диапазона HU
 
-    # Получаем параметры для преобразования в HU
-    rescale_intercept = get_rescale_intercept(ds)
-    rescale_slope = get_rescale_slope(ds)
+        # Создаем ядро для морфологических операций (5x5 пикселей)
+        kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
 
-    # Преобразуем в единицы Хаунсфилда (HU)
-    hu_img = numpy.vectorize(get_hu, excluded=['rescale_intercept', 'rescale_slope']) \
-        (new_image, rescale_intercept, rescale_slope).astype(numpy.int16)  # int16 для сохранения всего диапазона HU
+        # Создаем предварительную маску: 1 для пикселей в диапазоне HU тела, 0 для остальных
+        only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
+        only_body_mask = only_body_mask.astype(numpy.uint8)  # Конвертируем в 8-битный формат
 
-    # Создаем ядро для морфологических операций (5x5 пикселей)
-    kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
+        # Морфологическое открытие (эрозия + дилатация) для удаления мелких артефактов
+        only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
 
-    # Создаем предварительную маску: 1 для пикселей в диапазоне HU тела, 0 для остальных
-    only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
-    only_body_mask = only_body_mask.astype(numpy.uint8)  # Конвертируем в 8-битный формат
-
-    # Морфологическое открытие (эрозия + дилатация) для удаления мелких артефактов
-    only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
-
-    # Находим все контуры на бинарном изображении
-    contours, hierarchy = cv2.findContours(only_body_mask,
-                                           cv2.RETR_EXTERNAL,  # Только внешние контуры
-                                           cv2.CHAIN_APPROX_NONE)  # Сохраняем все точки контура
-
-    # Выбираем контур с максимальной площадью (предполагая, что это тело пациента)
-    max_contour = max(contours, key=cv2.contourArea, default=None)
-
-    if max_contour is not None:
-        # Создаем чистую маску и рисуем на ней только максимальный контур
-        only_body_mask = numpy.zeros_like(only_body_mask)
-        cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)  # -1 означает заливку контура
-
+        # Находим все контуры на бинарном изображении
+        contours, hierarchy = cv2.findContours(only_body_mask,
+                                            cv2.RETR_EXTERNAL,  # Только внешние контуры
+                                            cv2.CHAIN_APPROX_NONE)  # Сохраняем все точки контура
+        
+        # Выбираем контур с максимальной площадью (предполагая, что это тело пациента)
+        max_contour = max(contours, key=cv2.contourArea, default=None)
+        logger.info(f"✅ Функция get_axial_slice_body_mask | len_contours {len(contours)}")
+        if max_contour is not None:
+            # Создаем чистую маску и рисуем на ней только максимальный контур
+            only_body_mask = numpy.zeros_like(only_body_mask)
+            cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)  # -1 означает заливку контура
+    except:
+        logger.error("🔴 Ошибка в функции get_axial_slice_body_mask ds - {ds}")
     return only_body_mask  # Возвращаем маску (255 - тело, 0 - фон)
 
 
@@ -572,18 +599,22 @@ def get_axial_slice_body_mask_nii(hu_img):
         only_body_mask: cv2.image
 
     """
-    kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
-    only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
-    only_body_mask = only_body_mask.astype(numpy.uint8)
+    only_body_mask = []
+    try:
+        kernel_only_body_mask = numpy.ones((5, 5), numpy.uint8)
+        only_body_mask = numpy.where((hu_img > -500) & (hu_img < 1000), 1, 0)
+        only_body_mask = only_body_mask.astype(numpy.uint8)
 
-    only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
+        only_body_mask = cv2.morphologyEx(only_body_mask, cv2.MORPH_OPEN, kernel_only_body_mask)
 
-    contours, hierarchy = cv2.findContours(only_body_mask,
-                                           cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    max_contour = max(contours, key=cv2.contourArea, default=None)
-    if max_contour is not None:
-        only_body_mask = numpy.zeros_like(only_body_mask)
-    cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)
+        contours, hierarchy = cv2.findContours(only_body_mask,
+                                            cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        max_contour = max(contours, key=cv2.contourArea, default=None)
+        if max_contour is not None:
+            only_body_mask = numpy.zeros_like(only_body_mask)
+        cv2.drawContours(only_body_mask, [max_contour], 0, 255, -1)
+    except:
+        logger.error("🔴 Ошибка в функции get_axial_slice_body_mask_nii hu_img {hu_img}")
     return only_body_mask
 
 
@@ -599,7 +630,12 @@ def get_rescale_intercept(dicom_data):
     Returns:
 
     """
-    return int(dicom_data[(0x0028, 0x1052)].value)
+    ri = None
+    try:
+        ri = int(dicom_data[(0x0028, 0x1052)].value)
+    except:
+        logger.error("🔴 Ошибка в функции get_rescale_intercept {dicom_data}")
+    return ri
 
 
 def get_rescale_slope(dicom_data):
@@ -612,7 +648,11 @@ def get_rescale_slope(dicom_data):
     Returns:
 
     """
-    rescale_slope = int(dicom_data[(0x0028, 0x1053)].value)
+    rescale_slope = None
+    try:
+        rescale_slope = int(dicom_data[(0x0028, 0x1053)].value)
+    except:
+        logger.error("🔴 Ошибка в функции get_rescale_slope {dicom_data}")
     return rescale_slope
 
 
@@ -640,63 +680,78 @@ def get_hu(pixel_value, rescale_intercept=0, rescale_slope=1.0):
     Returns:
 
     """
-    hounsfield_units = (rescale_slope * pixel_value) + rescale_intercept
+    hounsfield_units = None
+    try:
+        hounsfield_units = (rescale_slope * pixel_value) + rescale_intercept
+    except:
+        logger.error("🔴 Ошибка в функции get_hu {pixel_value}")
     return hounsfield_units
 
 
 def clear_color_output(only_body_mask, color_output, tolerance=5, min_polygon_size=5):
-    mask_organs_processed = color_output.copy()
-    h, w = mask_organs_processed.shape[:2]
+    """
+    Docstring for clear_color_output
+    
+    :param only_body_mask: Description
+    :param color_output: Description
+    :param tolerance: Description
+    :param min_polygon_size: Description
+    """
+    mask_organs_processed = []
+    try:
+        mask_organs_processed = color_output.copy()
+        h, w = mask_organs_processed.shape[:2]
 
-    # 1. Закрашиваем почти чёрные пиксели внутри тела красным
-    is_black = numpy.all(numpy.abs(color_output - [0, 0, 0]) <= tolerance, axis=2)
-    is_in_body = (only_body_mask == 255)
-    to_fill = is_black & is_in_body
-    mask_organs_processed[to_fill] = [0, 0, 255]  # Красный в BGR
+        # 1. Закрашиваем почти чёрные пиксели внутри тела красным
+        is_black = numpy.all(numpy.abs(color_output - [0, 0, 0]) <= tolerance, axis=2)
+        is_in_body = (only_body_mask == 255)
+        to_fill = is_black & is_in_body
+        mask_organs_processed[to_fill] = [0, 0, 255]  # Красный в BGR
 
-    # 2. Находим все связные области (полигоны), кроме фона (чёрного/красного)
-    background_colors = [
-        [0, 0, 0],  # Чёрный
-        [0, 0, 255]  # Красный (уже закрашенные области)
-    ]
-    is_background = numpy.zeros((h, w), dtype=bool)
-    for color in background_colors:
-        is_background |= numpy.all(mask_organs_processed == color, axis=2)
+        # 2. Находим все связные области (полигоны), кроме фона (чёрного/красного)
+        background_colors = [
+            [0, 0, 0],  # Чёрный
+            [0, 0, 255]  # Красный (уже закрашенные области)
+        ]
+        is_background = numpy.zeros((h, w), dtype=bool)
+        for color in background_colors:
+            is_background |= numpy.all(mask_organs_processed == color, axis=2)
 
-    # Размечаем все связные области (каждый полигон получает уникальный label)
-    labeled, num_features = label(~is_background)
+        # Размечаем все связные области (каждый полигон получает уникальный label)
+        labeled, num_features = label(~is_background)
 
-    # 3. Проходим по всем полигонам и закрашиваем маленькие (<5 пикселей)
-    for label_idx in range(1, num_features + 1):
-        polygon_mask = (labeled == label_idx)
-        polygon_size = numpy.sum(polygon_mask)
+        # 3. Проходим по всем полигонам и закрашиваем маленькие (<5 пикселей)
+        for label_idx in range(1, num_features + 1):
+            polygon_mask = (labeled == label_idx)
+            polygon_size = numpy.sum(polygon_mask)
 
-        if polygon_size < min_polygon_size:
-            # Находим соседние цвета (игнорируя чёрный и красный)
-            y, x = numpy.where(polygon_mask)
-            neighbors = []
+            if polygon_size < min_polygon_size:
+                # Находим соседние цвета (игнорируя чёрный и красный)
+                y, x = numpy.where(polygon_mask)
+                neighbors = []
 
-            # Проверяем 8-связных соседей для каждой точки полигона
-            for dy, dx in [(-1, -1), (-1, 0), (-1, 1),
-                           (0, -1), (0, 1),
-                           (1, -1), (1, 0), (1, 1)]:
-                ny, nx = y + dy, x + dx
-                valid = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
-                ny, nx = ny[valid], nx[valid]
+                # Проверяем 8-связных соседей для каждой точки полигона
+                for dy, dx in [(-1, -1), (-1, 0), (-1, 1),
+                            (0, -1), (0, 1),
+                            (1, -1), (1, 0), (1, 1)]:
+                    ny, nx = y + dy, x + dx
+                    valid = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+                    ny, nx = ny[valid], nx[valid]
 
-                for color in mask_organs_processed[ny, nx]:
-                    if not any(numpy.array_equal(color, bg_color) for bg_color in background_colors):
-                        neighbors.append(tuple(color))  # Конвертируем в кортеж для хеширования
+                    for color in mask_organs_processed[ny, nx]:
+                        if not any(numpy.array_equal(color, bg_color) for bg_color in background_colors):
+                            neighbors.append(tuple(color))  # Конвертируем в кортеж для хеширования
 
-            if neighbors:
-                # Находим самый частый цвет среди соседей (по хешу кортежа)
-                from collections import Counter
-                neighbor_color = Counter(neighbors).most_common(1)[0][0]
-                mask_organs_processed[polygon_mask] = neighbor_color
-            else:
-                # Если соседей нет, закрашиваем красным (как фоновым)
-                mask_organs_processed[polygon_mask] = [0, 0, 255]
-
+                if neighbors:
+                    # Находим самый частый цвет среди соседей (по хешу кортежа)
+                    from collections import Counter
+                    neighbor_color = Counter(neighbors).most_common(1)[0][0]
+                    mask_organs_processed[polygon_mask] = neighbor_color
+                else:
+                    # Если соседей нет, закрашиваем красным (как фоновым)
+                    mask_organs_processed[polygon_mask] = [0, 0, 255]
+    except:
+        logger.error("🔴 Ошибка в функции clear_color_output")
     return mask_organs_processed
 
 
@@ -721,68 +776,70 @@ def highlight_small_masks(image, area_threshold=5):
         Изображение того же размера, что и входное, с перекрашенными маленькими масками.
 
     """
+    output = []
+    try:
+        # Цвета масок для разных типов тканей в формате BGR
+        mask_colors = {
+            "bone": (255, 255, 255),  # Белый - кости
+            "muscle": (0, 0, 255),  # Красный - мышцы
+            "fat": (0, 255, 255),  # Желтый - жир
+            "air": (0, 150, 255),  # Оранжевый - воздух
+        }
 
-    # Цвета масок для разных типов тканей в формате BGR
-    mask_colors = {
-        "bone": (255, 255, 255),  # Белый - кости
-        "muscle": (0, 0, 255),  # Красный - мышцы
-        "fat": (0, 255, 255),  # Желтый - жир
-        "air": (0, 150, 255),  # Оранжевый - воздух
-    }
+        # Создаем копию изображения для модификации
+        output = image.copy()
 
-    # Создаем копию изображения для модификации
-    output = image.copy()
+        # Обрабатываем каждый тип ткани отдельно
+        for tissue, target_color in mask_colors.items():
+            # Определяем диапазон цветов для текущего типа ткани (±10 от целевого цвета)
+            lower = numpy.array(target_color, dtype=numpy.int16) - 10
+            upper = numpy.array(target_color, dtype=numpy.int16) + 10
 
-    # Обрабатываем каждый тип ткани отдельно
-    for tissue, target_color in mask_colors.items():
-        # Определяем диапазон цветов для текущего типа ткани (±10 от целевого цвета)
-        lower = numpy.array(target_color, dtype=numpy.int16) - 10
-        upper = numpy.array(target_color, dtype=numpy.int16) + 10
+            # Создаем бинарную маску для текущего цвета ткани
+            mask = cv2.inRange(image, lower, upper)
 
-        # Создаем бинарную маску для текущего цвета ткани
-        mask = cv2.inRange(image, lower, upper)
+            # Находим контуры всех масок текущего цвета
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Находим контуры всех масок текущего цвета
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Обрабатываем каждый контур отдельно
+            for cnt in contours:
+                # Если размер контура меньше порогового значения
+                if len(cnt) <= area_threshold:
+                    # Создаем маску только для текущего контура
+                    contour_mask = numpy.zeros(image.shape[:2], dtype=numpy.uint8)
+                    cv2.drawContours(contour_mask, [cnt], -1, 255, cv2.FILLED)
 
-        # Обрабатываем каждый контур отдельно
-        for cnt in contours:
-            # Если размер контура меньше порогового значения
-            if len(cnt) <= area_threshold:
-                # Создаем маску только для текущего контура
-                contour_mask = numpy.zeros(image.shape[:2], dtype=numpy.uint8)
-                cv2.drawContours(contour_mask, [cnt], -1, 255, cv2.FILLED)
+                    # Расширяем маску контура на 1 пиксель, чтобы получить соседние пиксели
+                    dilated = cv2.dilate(contour_mask, numpy.ones((3, 3), numpy.uint8), iterations=1)
+                    neighbors_mask = dilated - contour_mask
 
-                # Расширяем маску контура на 1 пиксель, чтобы получить соседние пиксели
-                dilated = cv2.dilate(contour_mask, numpy.ones((3, 3), numpy.uint8), iterations=1)
-                neighbors_mask = dilated - contour_mask
+                    # Получаем цвета соседних пикселей
+                    neighbor_colors = output[neighbors_mask == 255]
 
-                # Получаем цвета соседних пикселей
-                neighbor_colors = output[neighbors_mask == 255]
+                    if len(neighbor_colors) > 0:
+                        # Фильтруем цвета: убираем целевой цвет и черный (фон)
+                        neighbor_colors = [tuple(c) for c in neighbor_colors
+                                        if not numpy.array_equal(c, target_color)
+                                        and not numpy.array_equal(c, (0, 0, 0))]
 
-                if len(neighbor_colors) > 0:
-                    # Фильтруем цвета: убираем целевой цвет и черный (фон)
-                    neighbor_colors = [tuple(c) for c in neighbor_colors
-                                       if not numpy.array_equal(c, target_color)
-                                       and not numpy.array_equal(c, (0, 0, 0))]
-
-                    if neighbor_colors:
-                        # Выбираем наиболее часто встречающийся цвет соседей
-                        from collections import Counter
-                        fill_color = Counter(neighbor_colors).most_common(1)[0][0]
+                        if neighbor_colors:
+                            # Выбираем наиболее часто встречающийся цвет соседей
+                            from collections import Counter
+                            fill_color = Counter(neighbor_colors).most_common(1)[0][0]
+                        else:
+                            # Если подходящих соседей нет, оставляем исходный цвет
+                            fill_color = target_color
                     else:
-                        # Если подходящих соседей нет, оставляем исходный цвет
+                        # Если совсем нет соседей, оставляем исходный цвет
                         fill_color = target_color
-                else:
-                    # Если совсем нет соседей, оставляем исходный цвет
-                    fill_color = target_color
 
-                # Преобразуем цвет в кортеж целых чисел (на случай, если был numpy array)
-                fill_color = tuple(map(int, fill_color))
+                    # Преобразуем цвет в кортеж целых чисел (на случай, если был numpy array)
+                    fill_color = tuple(map(int, fill_color))
 
-                # Закрашиваем маленькую маску выбранным цветом
-                cv2.drawContours(output, [cnt], -1, fill_color, thickness=cv2.FILLED)
-
+                    # Закрашиваем маленькую маску выбранным цветом
+                    cv2.drawContours(output, [cnt], -1, fill_color, thickness=cv2.FILLED)
+    except:
+        logger.error("🔴 Ошибка в функции highlight_small_masks | {image.shape}")
     return output
 
 
@@ -795,19 +852,23 @@ def overlay_masks_with_transparency(base_image, color_mask, alpha=0.8):
     - color_mask: цветная маска (512, 512, 3)
     - alpha: уровень прозрачности (0-1)
     """
-    # 1. Конвертируем базовое изображение в RGB (если оно grayscale)
-    if len(base_image.shape) == 2:
-        base_image = cv2.cvtColor(base_image, cv2.COLOR_GRAY2BGR)
+    overlay = []
+    try:
+        # 1. Конвертируем базовое изображение в RGB (если оно grayscale)
+        if len(base_image.shape) == 2:
+            base_image = cv2.cvtColor(base_image, cv2.COLOR_GRAY2BGR)
 
-    # 2. Нормализуем изображения (если нужно)
-    if base_image.dtype != numpy.uint8:
-        base_image = cv2.normalize(base_image, None, 0, 255, cv2.NORM_MINMAX).astype(numpy.uint8)
+        # 2. Нормализуем изображения (если нужно)
+        if base_image.dtype != numpy.uint8:
+            base_image = cv2.normalize(base_image, None, 0, 255, cv2.NORM_MINMAX).astype(numpy.uint8)
 
-    if color_mask.dtype != numpy.uint8:
-        color_mask = cv2.normalize(color_mask, None, 0, 255, cv2.NORM_MINMAX).astype(numpy.uint8)
+        if color_mask.dtype != numpy.uint8:
+            color_mask = cv2.normalize(color_mask, None, 0, 255, cv2.NORM_MINMAX).astype(numpy.uint8)
 
-    # 3. Наложение с прозрачностью
-    overlay = cv2.addWeighted(base_image, 1.0, color_mask, alpha, 0)
+        # 3. Наложение с прозрачностью
+        overlay = cv2.addWeighted(base_image, 1.0, color_mask, alpha, 0)
+    except:
+        logger.error("🔴 Ошибка в функции overlay_masks_with_transparency")
 
     return overlay
 
@@ -830,93 +891,97 @@ def create_segmentation_masks_full_image(segmentation_masks_image=None, only_bod
     Returns:
         Комбинированное изображение с доступными компонентами
     """
-    images_to_combine = []
+    result = []
+    try:
+        images_to_combine = []
 
-    # 1. Обрабатываем ribs_annotated_image, если он есть
-    if ribs_annotated_image is not None and numpy.any(ribs_annotated_image):
-        images_to_combine.append(("1. Ribs Annotated", ribs_annotated_image))
+        # 1. Обрабатываем ribs_annotated_image, если он есть
+        if ribs_annotated_image is not None and numpy.any(ribs_annotated_image):
+            images_to_combine.append(("1. Ribs Annotated", ribs_annotated_image))
 
-    # 2. Обрабатываем axial_slice_norm_body, если он есть
-    if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
-        images_to_combine.append(("2. Axial Slice", axial_slice_norm_body))
-
-    # 3. Обрабатываем segmentation_masks_image, если он есть
-    if segmentation_masks_image is not None and len(segmentation_masks_image) > 0:
-        color_output = create_color_output(segmentation_masks_image, only_body_mask)
-
+        # 2. Обрабатываем axial_slice_norm_body, если он есть
         if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
-            axial_slice_norm_body_with_color = overlay_masks_with_transparency(axial_slice_norm_body, color_output)
-            images_to_combine.append(("3. Combined View", axial_slice_norm_body_with_color))
+            images_to_combine.append(("2. Axial Slice", axial_slice_norm_body))
 
-        images_to_combine.append(("4. Color Masks", color_output))
+        # 3. Обрабатываем segmentation_masks_image, если он есть
+        if segmentation_masks_image is not None and len(segmentation_masks_image) > 0:
+            color_output = create_color_output(segmentation_masks_image, only_body_mask)
 
-        # Добавляем отдельные маски из словаря
-        for idx, (key, image) in enumerate(segmentation_masks_image.items(), start=5):
-            if image is not None and numpy.any(image):
-                images_to_combine.append((f"{idx}. {key}", image))
+            if axial_slice_norm_body is not None and numpy.any(axial_slice_norm_body):
+                axial_slice_norm_body_with_color = overlay_masks_with_transparency(axial_slice_norm_body, color_output)
+                images_to_combine.append(("3. Combined View", axial_slice_norm_body_with_color))
 
-    # 4. Обрабатываем img_mesh, если он есть (добавляем в конец)
-    if img_mesh is not None and numpy.any(img_mesh):
-        images_to_combine.append(("Mesh Visualization", img_mesh))
+            images_to_combine.append(("4. Color Masks", color_output))
 
-    # Если нет изображений для объединения, возвращаем пустое изображение
-    if not images_to_combine:
-        return numpy.zeros((100, 100, 3), dtype=numpy.uint8)
+            # Добавляем отдельные маски из словаря
+            for idx, (key, image) in enumerate(segmentation_masks_image.items(), start=5):
+                if image is not None and numpy.any(image):
+                    images_to_combine.append((f"{idx}. {key}", image))
 
-    # 5. Приводим все изображения к одному размеру (берем максимальные размеры)
-    max_height = max(img.shape[0] for _, img in images_to_combine)
-    max_width = max(img.shape[1] for _, img in images_to_combine)
+        # 4. Обрабатываем img_mesh, если он есть (добавляем в конец)
+        if img_mesh is not None and numpy.any(img_mesh):
+            images_to_combine.append(("Mesh Visualization", img_mesh))
 
-    # 6. Добавляем подписи и выравниваем размеры
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.8
-    font_color = (255, 255, 255)
-    thickness = 1
+        # Если нет изображений для объединения, возвращаем пустое изображение
+        if not images_to_combine:
+            return numpy.zeros((100, 100, 3), dtype=numpy.uint8)
 
-    labeled_images = []
-    for label, image in images_to_combine:
-        # Конвертируем в цветное если нужно
-        if len(image.shape) == 2:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        elif image.shape[2] == 1:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        # 5. Приводим все изображения к одному размеру (берем максимальные размеры)
+        max_height = max(img.shape[0] for _, img in images_to_combine)
+        max_width = max(img.shape[1] for _, img in images_to_combine)
 
-        # Выравниваем размеры
-        if image.shape[0] != max_height or image.shape[1] != max_width:
-            image = cv2.resize(image, (max_width, max_height))
+        # 6. Добавляем подписи и выравниваем размеры
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.8
+        font_color = (255, 255, 255)
+        thickness = 1
 
-        # Создаем копию для подписи
-        labeled = image.copy()
-        h, w = labeled.shape[:2]
+        labeled_images = []
+        for label, image in images_to_combine:
+            # Конвертируем в цветное если нужно
+            if len(image.shape) == 2:
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+            elif image.shape[2] == 1:
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        # Добавляем подпись
-        text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
-        text_x = (w - text_size[0]) // 2
-        text_y = h - 10  # Внизу изображения
+            # Выравниваем размеры
+            if image.shape[0] != max_height or image.shape[1] != max_width:
+                image = cv2.resize(image, (max_width, max_height))
 
-        cv2.putText(labeled, label, (text_x, text_y), font,
-                    font_scale, font_color, thickness, cv2.LINE_AA)
+            # Создаем копию для подписи
+            labeled = image.copy()
+            h, w = labeled.shape[:2]
 
-        labeled_images.append(labeled)
+            # Добавляем подпись
+            text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
+            text_x = (w - text_size[0]) // 2
+            text_y = h - 10  # Внизу изображения
 
-    # 7. Определяем размеры сетки
-    num_images = len(labeled_images)
-    cols = min(3, num_images)  # Не более 3 колонок, но меньше если изображений мало
-    rows = (num_images + cols - 1) // cols  # Вычисляем нужное количество строк
+            cv2.putText(labeled, label, (text_x, text_y), font,
+                        font_scale, font_color, thickness, cv2.LINE_AA)
 
-    # 8. Создаем результирующее изображение
-    result = numpy.zeros((max_height * rows, max_width * cols, 3), dtype=numpy.uint8)
+            labeled_images.append(labeled)
 
-    # 9. Заполняем сетку изображениями
-    for i in range(rows):
-        for j in range(cols):
-            idx = i * cols + j
-            if idx < num_images:
-                y_start = i * max_height
-                y_end = (i + 1) * max_height
-                x_start = j * max_width
-                x_end = (j + 1) * max_width
-                result[y_start:y_end, x_start:x_end] = labeled_images[idx]
+        # 7. Определяем размеры сетки
+        num_images = len(labeled_images)
+        cols = min(3, num_images)  # Не более 3 колонок, но меньше если изображений мало
+        rows = (num_images + cols - 1) // cols  # Вычисляем нужное количество строк
+
+        # 8. Создаем результирующее изображение
+        result = numpy.zeros((max_height * rows, max_width * cols, 3), dtype=numpy.uint8)
+
+        # 9. Заполняем сетку изображениями
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx < num_images:
+                    y_start = i * max_height
+                    y_end = (i + 1) * max_height
+                    x_start = j * max_width
+                    x_end = (j + 1) * max_width
+                    result[y_start:y_end, x_start:x_end] = labeled_images[idx]
+    except:
+        logger.error(f"🔴 Ошибка в функции create_segmentation_masks_full_image | len_segmentation_masks_image {len(segmentation_masks_image)} | only_body_mask {(only_body_mask)} | ribs_annotated_image{(ribs_annotated_image)} | len_axial_slice_norm_body{(axial_slice_norm_body)} | len_img_mesh{len(img_mesh)}")
 
     return result
 
@@ -932,22 +997,22 @@ def create_color_output(segmentation_masks_image, only_body_mask=None):
     Returns:
         Цветное изображение с наложенными масками
     """
-    if segmentation_masks_image is None or len(segmentation_masks_image) == 0:
-        return None
-
-    color_output = overlay_segmentation_masks(segmentation_masks_image)
-
-    if only_body_mask is not None and numpy.any(only_body_mask):
-        color_output = clear_color_output(only_body_mask, color_output)
-
-    color_output = highlight_small_masks(color_output)
-
+    color_output = []
+    try:
+        if segmentation_masks_image is None or len(segmentation_masks_image) == 0:
+            return None
+        color_output = overlay_segmentation_masks(segmentation_masks_image)
+        if only_body_mask is not None and numpy.any(only_body_mask):
+            color_output = clear_color_output(only_body_mask, color_output)
+        color_output = highlight_small_masks(color_output)
+    except:
+        logger.error(f"🔴 Ошибка в функции create_color_output | segmentation_masks_image {segmentation_masks_image} | only_body_mask {only_body_mask}")
     return color_output
 
 
 def create_segmentation_results_cnt(axial_detections):
-    """"""
-    text = 'cnt'
+    """Резервная функция для текстовых данных"""
+    text = ''
     return text
 
 
@@ -965,29 +1030,32 @@ def create_answer(segmentation_masks_full_image, segmentation_results_cnt, segme
     Returns:
         dict: словарь с ответом, содержащим изображение в base64 и текст
     """
-    # Конвертируем numpy array в изображение PIL
-    segmentation_masks_full_image = cv2.cvtColor(segmentation_masks_full_image, cv2.COLOR_BGR2RGB)
-    pil_img = Image.fromarray(segmentation_masks_full_image)
+    answer =[]
+    try:
+        # Конвертируем numpy array в изображение PIL
+        segmentation_masks_full_image = cv2.cvtColor(segmentation_masks_full_image, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(segmentation_masks_full_image)
 
-    # Конвертируем изображение в байты
-    img_byte_arr = BytesIO()
-    pil_img.save(img_byte_arr, format='PNG')
-    img_byte_arr = img_byte_arr.getvalue()
+        # Конвертируем изображение в байты
+        img_byte_arr = BytesIO()
+        pil_img.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
 
-    # Кодируем изображение в base64
-    img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
+        # Кодируем изображение в base64
+        img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
 
-    # Формируем ответ
-    answer = {
-        "image": img_base64,
-        "text_data": segmentation_results_cnt,
-        "segmentation_time": segmentation_time,
-        "saved_file_name": saved_file_name,
-        "simulation_time": simulation_time,
-        "status": "success",
-        "message": "Processing completed successfully"
-    }
-
+        # Формируем ответ
+        answer = {
+            "image": img_base64,
+            "text_data": segmentation_results_cnt,
+            "segmentation_time": segmentation_time,
+            "saved_file_name": saved_file_name,
+            "simulation_time": simulation_time,
+            "status": "success",
+            "message": "Processing completed successfully"
+        }
+    except:
+        logger.error(f"🔴 Ошибка в функции create_answer")
     return JSONResponse(content=answer)
 
 
@@ -998,54 +1066,56 @@ def get_nii_mean_slice(zip_file):
     Returns:
         tuple: (средний срез после поворота на 90°, pixel_spacing как список [dx, dy])
     """
-    # Проверяем наличие custom_input.txt (не используется далее, но сохранено для совместимости)
-    if 'custom_input.txt' in zip_file.namelist():
-        with zip_file.open('custom_input.txt') as f:
-            f.read().decode('utf-8').strip()  # Можно использовать позже, если нужно
+    try:
+        # Проверяем наличие custom_input.txt (не используется далее, но сохранено для совместимости)
+        if 'custom_input.txt' in zip_file.namelist():
+            with zip_file.open('custom_input.txt') as f:
+                f.read().decode('utf-8').strip()  # Можно использовать позже, если нужно
 
-    data = None
-    pixel_spacing = [0.662, 0.662]  # значение по умолчанию
+        data = None
+        pixel_spacing = [0.662, 0.662]  # значение по умолчанию
 
-    for file_name in zip_file.namelist():
-        if file_name.lower().endswith('.nii.gz') and not file_name.lower().endswith('.tar.gz'):
-            try:
-                with zip_file.open(file_name) as file:
-                    file_content = file.read()
+        for file_name in zip_file.namelist():
+            if file_name.lower().endswith('.nii.gz') and not file_name.lower().endswith('.tar.gz'):
+                try:
+                    with zip_file.open(file_name) as file:
+                        file_content = file.read()
 
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.nii.gz') as tmp_file:
-                        tmp_file.write(file_content)
-                        tmp_file_path = tmp_file.name
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.nii.gz') as tmp_file:
+                            tmp_file.write(file_content)
+                            tmp_file_path = tmp_file.name
 
-                    nii_img = nib.load(tmp_file_path)
-                    data = nii_img.get_fdata().astype(numpy.int16)
+                        nii_img = nib.load(tmp_file_path)
+                        data = nii_img.get_fdata().astype(numpy.int16)
 
-                    # Извлекаем pixel spacing из заголовка
-                    header = nii_img.header
-                    pixdim = header.get('pixdim', None)
-                    if pixdim is not None and len(pixdim) >= 3:
-                        dx, dy = float(pixdim[1]), float(pixdim[2])
-                        # Проверяем корректность значений
-                        if dx > 0 and dy > 0:
-                            pixel_spacing = [dx, dy]
+                        # Извлекаем pixel spacing из заголовка
+                        header = nii_img.header
+                        pixdim = header.get('pixdim', None)
+                        if pixdim is not None and len(pixdim) >= 3:
+                            dx, dy = float(pixdim[1]), float(pixdim[2])
+                            # Проверяем корректность значений
+                            if dx > 0 and dy > 0:
+                                pixel_spacing = [dx, dy]
 
-                    os.unlink(tmp_file_path)
+                        os.unlink(tmp_file_path)
 
-                    # Получаем средний срез
-                    slice_mean = int(data.shape[-1] / 2)
-                    slise_save = data[:, :, slice_mean]
-                    slise_save = cv2.rotate(slise_save, cv2.ROTATE_90_CLOCKWISE)
+                        # Получаем средний срез
+                        slice_mean = int(data.shape[-1] / 2)
+                        slise_save = data[:, :, slice_mean]
+                        slise_save = cv2.rotate(slise_save, cv2.ROTATE_90_CLOCKWISE)
 
-                    break  # Обрабатываем первый подходящий файл
+                        break  # Обрабатываем первый подходящий файл
 
-            except Exception as e:
-                print(f"Ошибка при обработке файла {file_name}: {str(e)}")
-                if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
-                    os.unlink(tmp_file_path)
-                continue
+                except Exception as e:
+                    print(f"Ошибка при обработке файла {file_name}: {str(e)}")
+                    if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+                    continue
 
-    if data is None:
-        raise ValueError("Не удалось загрузить NIfTI файл из архива")
-
+        if data is None:
+            raise ValueError("🔴 Не удалось загрузить NIfTI файл из архива (get_nii_mean_slice)")
+    except:
+        logger.error(f"🔴 Ошибка в функции get_nii_mean_slice")
     return slise_save, pixel_spacing
 
 
@@ -1061,18 +1131,26 @@ def get_pixel_spacing(dicom_data):
         pixel_spacing: (0028, 0030) Pixel Spacing DS: [0.753906, 0.753906] - можно обращаться через индекс
 
     """
-    pixel_spacing = dicom_data[(0x0028, 0x0030)]
+    pixel_spacing = []
+    try:
+        pixel_spacing = dicom_data[(0x0028, 0x0030)]
+        logger.info(f"✅ Функция get_pixel_spacing | pixel_spacing {pixel_spacing}")
+    except:
+        logger.error(f"🔴 Ошибка в функции get_pixel_spacing | dicom_data {dicom_data}")
     return pixel_spacing
-
+            
 
 def ensure_closed_contour(coords):
     """Гарантирует, что контур замкнут: первая и последняя точки совпадают."""
-    if len(coords) == 0:
-        return coords
-    first = coords[0]
-    last = coords[-1]
-    if not numpy.array_equal(first, last):
-        coords = numpy.vstack([coords, first])
+    try:
+        if len(coords) == 0:
+            return coords
+        first = coords[0]
+        last = coords[-1]
+        if not numpy.array_equal(first, last):
+            coords = numpy.vstack([coords, first])
+    except:
+        logger.error(f"🔴 Ошибка в функции ensure_closed_contour | coords {coords}")
     return coords
 
 
@@ -1082,27 +1160,31 @@ def get_only_body_mask_contours(only_body_mask):
 
     :param only_body_mask: opencv image
     """
-    body_binary = []
-    if only_body_mask is not None and only_body_mask.any():
-        if only_body_mask.dtype != numpy.uint8:
-            body_binary = (only_body_mask > 0).astype(numpy.uint8) * 255
-        else:
-            body_binary = only_body_mask
+    polygon_str = []
+    try:
+        body_binary = []
+        if only_body_mask is not None and only_body_mask.any():
+            if only_body_mask.dtype != numpy.uint8:
+                body_binary = (only_body_mask > 0).astype(numpy.uint8) * 255
+            else:
+                body_binary = only_body_mask
 
 
-    body_contours, _ = cv2.findContours(body_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        body_contours, _ = cv2.findContours(body_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
 
-    for cnt in body_contours:
-        if len(cnt) < 5:
-            continue
-        # Преобразуем контур в массив координат (N, 2)
-        coords = cnt.reshape(-1, 2).astype(numpy.float64)
-        # Гарантируем замкнутость
-        coords = ensure_closed_contour(coords)
-        closed_cnt = coords[:-1].reshape(-1, 1, 2)
-        points_str = " ".join([f"{int(p[0][0])} {int(p[0][1])}" for p in closed_cnt])
-        polygon_str = f"{'4'} {points_str}"
+        for cnt in body_contours:
+            if len(cnt) < 5:
+                continue
+            # Преобразуем контур в массив координат (N, 2)
+            coords = cnt.reshape(-1, 2).astype(numpy.float64)
+            # Гарантируем замкнутость
+            coords = ensure_closed_contour(coords)
+            closed_cnt = coords[:-1].reshape(-1, 1, 2)
+            points_str = " ".join([f"{int(p[0][0])} {int(p[0][1])}" for p in closed_cnt])
+            polygon_str = f"{'4'} {points_str}"
+    except:
+        logger.error(f"🔴 Ошибка в функции get_only_body_mask_contours")
     return polygon_str
 
 
@@ -1136,63 +1218,64 @@ def create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mas
         - Контуры упрощаются с точностью 0.5% от длины контура
         - Не замкнутые контуры автоматически замыкаются
     """
-    # Соответствие цветов (RGB) и идентификаторов классов
-    color_class_map = {
-        (0, 255, 255): "3",  # Желтый -> класс 3 (жировая ткань)
-        (255, 255, 255): "0",  # Белый -> класс 0 (костная ткань)
-        (0, 0, 255): "1",  # Красный -> класс 1 (мышечная ткань)
-        (255, 255, 0): "2"  # Голубой -> класс 2 (легочная ткань)
-    }
+    result = []
+    try:
+        # Соответствие цветов (RGB) и идентификаторов классов
+        color_class_map = {
+            (0, 255, 255): "3",  # Желтый -> класс 3 (жировая ткань)
+            (255, 255, 255): "0",  # Белый -> класс 0 (костная ткань)
+            (0, 0, 255): "1",  # Красный -> класс 1 (мышечная ткань)
+            (255, 255, 0): "2"  # Голубой -> класс 2 (легочная ткань)
+        }
 
-    result = []  # Итоговый список координат
+        # Конвертируем изображение в BGR (для корректной работы cv2.inRange)
+        img = cv2.cvtColor(color_output, cv2.COLOR_RGB2BGR)
+        if only_body_mask is not None:
+            only_body_mask_contours = get_only_body_mask_contours(only_body_mask)
 
-    # Конвертируем изображение в BGR (для корректной работы cv2.inRange)
-    img = cv2.cvtColor(color_output, cv2.COLOR_RGB2BGR)
-    if only_body_mask is not None:
-        only_body_mask_contours = get_only_body_mask_contours(only_body_mask)
+        # Обрабатываем каждый цвет/класс
+        for color, class_name in color_class_map.items():
+            # Подготавливаем цвет для OpenCV (конвертируем RGB в BGR)
+            bgr_color = color[::-1]  # Инвертируем порядок каналов
 
-    # Обрабатываем каждый цвет/класс
-    for color, class_name in color_class_map.items():
-        # Подготавливаем цвет для OpenCV (конвертируем RGB в BGR)
-        bgr_color = color[::-1]  # Инвертируем порядок каналов
+            # Создаем маску для текущего цвета
+            lower = upper = numpy.array(bgr_color, dtype=numpy.uint8)
+            mask = cv2.inRange(img, lower, upper)
 
-        # Создаем маску для текущего цвета
-        lower = upper = numpy.array(bgr_color, dtype=numpy.uint8)
-        mask = cv2.inRange(img, lower, upper)
+            # Находим контуры на маске (только внешние контуры)
+            contours, _ = cv2.findContours(
+                mask,
+                cv2.RETR_EXTERNAL,  # Только внешние контуры
+                cv2.CHAIN_APPROX_SIMPLE  # Упрощенное представление контуров
+            )
 
-        # Находим контуры на маске (только внешние контуры)
-        contours, _ = cv2.findContours(
-            mask,
-            cv2.RETR_EXTERNAL,  # Только внешние контуры
-            cv2.CHAIN_APPROX_SIMPLE  # Упрощенное представление контуров
-        )
+            # Обрабатываем каждый найденный контур
+            for cnt in contours:
+                # Упрощаем контур (уменьшаем количество точек)
+                epsilon = 0.001 * cv2.arcLength(cnt, True)  # Точность 0.1%
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
 
-        # Обрабатываем каждый найденный контур
-        for cnt in contours:
-            # Упрощаем контур (уменьшаем количество точек)
-            epsilon = 0.001 * cv2.arcLength(cnt, True)  # Точность 0.1%
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
+                # Проверяем замкнутость контура
+                if len(approx) > 2:  # Контур должен содержать минимум 3 точки
+                    first_point = approx[0][0]
+                    last_point = approx[-1][0]
 
-            # Проверяем замкнутость контура
-            if len(approx) > 2:  # Контур должен содержать минимум 3 точки
-                first_point = approx[0][0]
-                last_point = approx[-1][0]
+                    # Если контур не замкнут, добавляем первую точку в конец
+                    if not numpy.array_equal(first_point, last_point):
+                        approx = numpy.append(approx, [[first_point]], axis=0)
 
-                # Если контур не замкнут, добавляем первую точку в конец
-                if not numpy.array_equal(first_point, last_point):
-                    approx = numpy.append(approx, [[first_point]], axis=0)
-
-            # Формируем строку с координатами полигона
-            points_str = " ".join([f"{p[0][0]} {p[0][1]}" for p in approx])
-            polygon_str = f"{class_name} {points_str}"
-            result.append(polygon_str)
-    if only_body_mask is not None:
-        result.append(only_body_mask_contours)
-    # Добавляем значения pixel_spacing в начало списка
-    result.insert(0, str(pixel_spacing[1]))  # spacing_y
-    result.insert(0, str(pixel_spacing[0]))  # spacing_x
-    #logger.info(f"result {result}")
-
+                # Формируем строку с координатами полигона
+                points_str = " ".join([f"{p[0][0]} {p[0][1]}" for p in approx])
+                polygon_str = f"{class_name} {points_str}"
+                result.append(polygon_str)
+        if only_body_mask is not None:
+            result.append(only_body_mask_contours)
+        # Добавляем значения pixel_spacing в начало списка
+        result.insert(0, str(pixel_spacing[1]))  # spacing_y
+        result.insert(0, str(pixel_spacing[0]))  # spacing_x
+        #logger.info(f"✅ result {result}")
+    except:
+        logger.error(f"🔴 Ошибка в функции create_list_crd_from_color_output | color_output {color_output} | pixel_spacing {pixel_spacing} | only_body_mask {only_body_mask}")
     return result
 
 
@@ -1212,6 +1295,7 @@ def get_axial_slice_size(cv2_image: numpy.ndarray, default_size: int = 512) -> i
     int
         Размер аксиального среза
     """
+    default_size = []
     try:
         if cv2_image is None or not hasattr(cv2_image, 'shape'):
             return default_size

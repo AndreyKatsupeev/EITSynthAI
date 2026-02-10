@@ -317,27 +317,31 @@ def simulate_EIT_monitoring_pyeit(meshdata, N_elec=16, N_spir=12, N_points=100, 
         - v: list[np.ndarray], EIT voltage projections over time
         - dataset_generation_time: float, total simulation time in seconds
     """
-    t1 = time.time()
-    meshinfo = prepare_mesh_from_femm_generator(meshdata)
-    materials = get_materials(materials_location)
-    Freq = 50000
-    dataf = make_spirometry(N_spir, N_points)
-    spir = dataf[:, 1] * 1.5
-    condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
-    classes_vals = class_to_cond(materials, Freq, classes_list)
-    mesh_obj = create_pyeit_model(meshinfo, N_elec)
-    protocol_obj = protocol.create(N_elec, dist_exc=1, step_meas=1, parser_meas="std")
-    fwd = EITForward(mesh_obj, protocol_obj)
-    task_args = [(line, classes_vals, meshinfo, fwd) for line in condspir]
-    with multiprocessing.Pool() as pool:
-        v = pool.starmap(process_EIT_projection, task_args)
-    if isSaveToFile is True and filename is not None:
-        with open(filename, "w") as f:
-            for i in range(N_spir*N_minutes):
-                for arr in v:
-                    arr = np.asarray(arr).ravel()
-                    np.savetxt(f, arr[None, :])
-    dataset_generation_time = time.time() - t1
+    v, dataset_generation_time = [], []
+    try:
+        t1 = time.time()
+        meshinfo = prepare_mesh_from_femm_generator(meshdata)
+        materials = get_materials(materials_location)
+        Freq = 50000
+        dataf = make_spirometry(N_spir, N_points)
+        spir = dataf[:, 1] * 1.5
+        condspir = spirometry_to_conuctivity(dataf, Freq, materials, spir)
+        classes_vals = class_to_cond(materials, Freq, classes_list)
+        mesh_obj = create_pyeit_model(meshinfo, N_elec)
+        protocol_obj = protocol.create(N_elec, dist_exc=1, step_meas=1, parser_meas="std")
+        fwd = EITForward(mesh_obj, protocol_obj)
+        task_args = [(line, classes_vals, meshinfo, fwd) for line in condspir]
+        with multiprocessing.Pool() as pool:
+            v = pool.starmap(process_EIT_projection, task_args)
+        if isSaveToFile is True and filename is not None:
+            with open(filename, "w") as f:
+                for i in range(N_spir*N_minutes):
+                    for arr in v:
+                        arr = np.asarray(arr).ravel()
+                        np.savetxt(f, arr[None, :])
+        dataset_generation_time = time.time() - t1
+    except:
+        logger.error("🔴 Ошибка в функции simulate_EIT_monitoring_pyeit ds")
     return v, dataset_generation_time
 
 def test_module():
