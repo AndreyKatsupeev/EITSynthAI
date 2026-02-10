@@ -53,8 +53,8 @@
 4. **После сборки фронт сервиса будет доступен по [адресу](http://0.0.0.0:8601/) или [адресу](http://localhost:8601/)**  
 5. **Данные для тестов можно скачать по [ссылке](https://disk.yandex.ru/d/z0EADQ_DNz15UQ)** 
 
-## Ссылка на [датасет изображений jpg, png](https://disk.yandex.ru/d/MFCv-wYaUkkixA)** 
-## Ссылка на [датасет dicom-файлов](https://disk.yandex.ru/d/_vVvUROVPaGbrQ)** 
+## Ссылка на [датасет изображений jpg, png](https://disk.yandex.ru/d/MFCv-wYaUkkixA)
+## Ссылка на [датасет dicom-файлов](https://disk.yandex.ru/d/G5TMx5ddNZkiCw)
 
 ## Примеры использования
 
