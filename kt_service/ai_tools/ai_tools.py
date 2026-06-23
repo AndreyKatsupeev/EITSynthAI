@@ -18,6 +18,8 @@ from .mesh_tools.femm_generator import create_mesh
 
 from .femm_tools.synthetic_datasets_generator import simulate_EIT_monitoring_pyeit
 
+from .eit_tools.generate_eit import generate_eit_dataset
+
 from pathlib import Path
 
 from skimage.exposure import equalize_adapthist
@@ -203,6 +205,7 @@ class DICOMSequencesToMask(DICOMabc):
         answer = []
         try:
             img_mesh = None
+            saved_file_name, simulation_time = None, None
             front_slice, img_3d, i_slices, _ = self._search_front_slise(zip_buffer)
             ribs_detections = self._ribs_predict(front_slice)
             axial_slice, number_slice_eit_list = self._search_axial_slice(ribs_detections, i_slices)
@@ -218,16 +221,22 @@ class DICOMSequencesToMask(DICOMabc):
             list_crd_from_color_output = create_list_crd_from_color_output(color_output, pixel_spacing, only_body_mask)
 
             segmentation_results_cnt = create_segmentation_results_cnt(axial_segmentations)
-            img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
-            img_mesh = cv2.flip(img_mesh, 0)
+            # img_mesh, meshdata = create_mesh(list_crd_from_color_output[:2], list_crd_from_color_output[2:])
+            # img_mesh = cv2.flip(img_mesh, 0)
             segmentation_masks_full_image = create_segmentation_masks_full_image(
                 segmentation_masks_image, only_body_mask, ribs_annotated_image,
                 axial_slice_norm_body, img_mesh
             )
-            simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+            #simulation_results, saved_file_name, simulation_time = self.get_synthetic_dataset(meshdata)
+            # logger.info(f"segmentation_results_cnt    ++++++    {list_crd_from_color_output}")
+            generate_eit_dataset(list_crd_from_color_output)
             answer = create_answer(segmentation_masks_full_image, segmentation_results_cnt, segmentation_time, saved_file_name, simulation_time)
-        except:
-            logger.error("🔴 Ошибка в классе DICOMSequencesToMask, функция get_coordinate_slice_from_dicom")
+
+
+
+        except Exception as e:
+            logger.error("🔴 Ошибка в классе DICOMSequencesToMask, функция get_coordinate_slice_from_dicom")     
+            print(f"{str(e)}")
         return answer
 
     def get_synthetic_dataset(self, meshdata):
